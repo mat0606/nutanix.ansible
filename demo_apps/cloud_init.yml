@@ -1,0 +1,6 @@
+#cloud-config
+chpasswd:
+  list: |
+    root: "nutanix/4u"
+    expire: False
+fqdn: "rhel_matthew"

@@ -1,3 +1,9 @@
 ---
 # public data
 pc_ip: 10.42.155.39
+
+# create vm
+cluster_name: PHX-POC155
+subnet_name: Calm_Secondary_ITC2
+image_name: rhel95-calm-template.qcow2
+vm_name: rhel_matthew
