@@ -1,0 +1,38 @@
+---
+- name: Clean up Nutanix Flow policy for WordPress using v2 modules
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - nutanix.ncp
+
+  vars_files:
+    - group_vars/dev/vault.yml
+    - group_vars/dev/vars
+
+  vars:
+    pc_ip: "10.42.155.39"
+    nutanix_port: 9440
+    validate_certs: false
+
+    wordpress_policy_names:
+      - "wordpress_app_policy"
+      - "wordpress_default_isolation"
+
+    wordpress_service_group_names:
+      - "wordpress_tcp_80"
+      - "wordpress_tcp_3306"
+
+  tasks:        
+    - name: Get all service groups
+      nutanix.ncp.ntnx_service_groups_info_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+      register: service_groups_info
+
+    - name: Show raw service group info
+      ansible.builtin.debug:
+        var: service_groups_info

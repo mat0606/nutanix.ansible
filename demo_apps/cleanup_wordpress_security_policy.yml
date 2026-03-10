@@ -1,0 +1,122 @@
+---
+- name: Clean up Nutanix Flow policy and service groups for WordPress
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - nutanix.ncp
+
+  vars_files:
+    - group_vars/dev/vault.yml
+    - group_vars/dev/vars
+
+  vars:
+    pc_ip: "10.42.155.39"
+    nutanix_port: 9440
+    validate_certs: false
+
+    wordpress_policy_names:
+      - "wordpress_app_policy"
+      - "wordpress_default_isolation"
+
+    wordpress_service_group_names:
+      - "wordpress_tcp_80"
+      - "wordpress_tcp_3306"
+
+  tasks:
+    - name: Get all security rules
+      nutanix.ncp.ntnx_security_rules_info_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+      register: security_rules_info
+      failed_when: false
+
+    - name: Get all service groups
+      nutanix.ncp.ntnx_service_groups_info_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+      register: service_groups_info
+      failed_when: false
+
+    - name: Normalize security rule list
+      ansible.builtin.set_fact:
+        all_security_rules: >-
+          {{
+            security_rules_info.response
+            | default([])
+          }}
+
+    - name: Normalize service group list
+      ansible.builtin.set_fact:
+        all_service_groups: >-
+          {{
+            service_groups_info.response
+            | default([])
+          }}
+
+    - name: Select WordPress security rules
+      ansible.builtin.set_fact:
+        wordpress_security_rules_to_delete: >-
+          {{
+            all_security_rules
+            | selectattr('name', 'in', wordpress_policy_names)
+            | list
+          }}
+
+    - name: Select WordPress service groups
+      ansible.builtin.set_fact:
+        wordpress_service_groups_to_delete: >-
+          {{
+            (service_groups_info.response | default([]))
+            | selectattr('name', 'defined')
+            | selectattr('name', 'in', wordpress_service_group_names)
+            | list
+          }}
+
+    - name: Show matched security rules
+      ansible.builtin.debug:
+        msg: "{{ wordpress_security_rules_to_delete | map(attribute='name') | list }}"
+
+    - name: Show matched service groups
+      ansible.builtin.debug:
+        msg: "{{ wordpress_service_groups_to_delete | map(attribute='name') | list }}"
+
+    - name: Delete WordPress security rules
+      nutanix.ncp.ntnx_security_rules_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+        state: absent
+        ext_id: "{{ item.ext_id }}"
+      loop: "{{ wordpress_security_rules_to_delete }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: wordpress_security_rules_to_delete | length > 0
+
+    - name: Delete WordPress service groups
+      nutanix.ncp.ntnx_service_groups_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+        state: absent
+        ext_id: "{{ item.ext_id }}"
+      loop: "{{ wordpress_service_groups_to_delete }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: wordpress_service_groups_to_delete | length > 0
+
+    - name: Show cleanup summary
+      ansible.builtin.debug:
+        msg:
+          - "Deleted security rules: {{ wordpress_security_rules_to_delete | map(attribute='name') | list }}"
+          - "Deleted service groups: {{ wordpress_service_groups_to_delete | map(attribute='name') | list }}"

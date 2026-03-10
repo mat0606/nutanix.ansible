@@ -5,5 +5,10 @@ pc_ip: 10.42.155.39
 # create vm
 cluster_name: PHX-POC155
 subnet_name: Calm_Secondary_ITC2
-image_name: rhel95-calm-template.qcow2
+image_name: rhel10-calm-template-2.qcow2
 vm_name: rhel_matthew
+
+# create wordpress security policy
+wordpress_web_category_uuid: 39efab75-bbb7-44eb-7107-7365a43f738e
+wordpress_app_category_uuid: 1efb7bde-23b5-45bc-6128-4a723b7cdde7
+wordpress_db_category_uuid: c4fcec16-cba7-446c-6b77-5f7f9dc54f5e

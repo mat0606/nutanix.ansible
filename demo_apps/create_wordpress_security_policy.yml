@@ -1,0 +1,160 @@
+---
+- name: Configure Nutanix Flow policy for WordPress using v2 modules
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - nutanix.ncp
+
+  vars_files:
+    - group_vars/dev/vault.yml
+    - group_vars/dev/vars
+
+  vars:
+    pc_ip: "10.42.155.39"
+    nutanix_port: 9440
+    validate_certs: false
+    policy_scope: "ALL_VLAN"
+    policy_state: "MONITOR"
+
+  tasks:
+    - name: Create TCP 80 service group
+      nutanix.ncp.ntnx_service_groups_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+        state: present
+        name: "wordpress_tcp_80"
+        description: "TCP 80 for WordPress HTTP"
+        tcp_services:
+          - start_port: 80
+            end_port: 80
+      register: wordpress_tcp_80_result
+
+    - name: Create TCP 3306 service group
+      nutanix.ncp.ntnx_service_groups_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+        state: present
+        name: "wordpress_tcp_3306"
+        description: "TCP 3306 for WordPress MySQL"
+        tcp_services:
+          - start_port: 3306
+            end_port: 3306
+      register: wordpress_tcp_3306_result
+
+    - name: Extract service group ext_ids
+      ansible.builtin.set_fact:
+        wordpress_tcp_80_ext_id: >-
+          {{
+            wordpress_tcp_80_result.ext_id
+            | default(wordpress_tcp_80_result.response.ext_id)
+          }}
+        wordpress_tcp_3306_ext_id: >-
+          {{
+            wordpress_tcp_3306_result.ext_id
+            | default(wordpress_tcp_3306_result.response.ext_id)
+          }}
+
+    - name: Debug category UUID variables
+      ansible.builtin.debug:
+        msg:
+          - "web={{ wordpress_web_category_uuid | default('NOT LOADED') }}"
+          - "app={{ wordpress_app_category_uuid | default('NOT LOADED') }}"
+          - "db={{ wordpress_db_category_uuid | default('NOT LOADED') }}"
+
+    - name: Create WordPress application policy
+      nutanix.ncp.ntnx_security_rules_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+        state: present
+        name: "wordpress_app_policy"
+        description: "Restrict web to app and app to db"
+        type: "APPLICATION"
+        policy_state: "{{ policy_state }}"
+        scope: "{{ policy_scope }}"
+        is_hitlog_enabled: true
+        is_ipv6_traffic_allowed: false
+        rules:
+          - description: "Deny app tier intra group traffic"
+            type: "INTRA_GROUP"
+            spec:
+              intra_entity_group_rule_spec:
+                secured_group_category_references:
+                  - "{{ wordpress_app_category_uuid }}"
+                secured_group_action: "DENY"
+
+          - description: "Allow web to app on TCP 80"
+            type: "APPLICATION"
+            spec:
+              application_rule_spec:
+                secured_group_category_references:
+                  - "{{ wordpress_app_category_uuid }}"
+                src_category_references:
+                  - "{{ wordpress_web_category_uuid }}"
+                service_group_references:
+                  - "{{ wordpress_tcp_80_ext_id }}"
+
+          - description: "Allow app to db on TCP 3306"
+            type: "APPLICATION"
+            spec:
+              application_rule_spec:
+                secured_group_category_references:
+                  - "{{ wordpress_db_category_uuid }}"
+                src_category_references:
+                  - "{{ wordpress_app_category_uuid }}"
+                service_group_references:
+                  - "{{ wordpress_tcp_3306_ext_id }}"
+
+      register: wordpress_app_policy_result
+
+    - name: Create WordPress isolation policy
+      nutanix.ncp.ntnx_security_rules_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+        state: present
+        name: "wordpress_default_isolation"
+        description: "Block direct traffic between wordpress web and wordpress db"
+        type: "ISOLATION"
+        policy_state: "{{ policy_state }}"
+        scope: "{{ policy_scope }}"
+        is_hitlog_enabled: true
+        is_ipv6_traffic_allowed: false
+        rules:
+          - description: "Block wordpress web to wordpress db"
+            type: "TWO_ENV_ISOLATION"
+            spec:
+              two_env_isolation_rule_spec:
+                first_isolation_group:
+                  - "{{ wordpress_web_category_uuid }}"
+                second_isolation_group:
+                  - "{{ wordpress_db_category_uuid }}"
+
+      register: wordpress_isolation_policy_result
+
+    - name: Fetch security rules
+      nutanix.ncp.ntnx_security_rules_info_v2:
+        nutanix_host: "{{ pc_ip }}"
+        nutanix_port: "{{ nutanix_port }}"
+        nutanix_username: "{{ vault_pc_username }}"
+        nutanix_password: "{{ vault_pc_password }}"
+        validate_certs: "{{ validate_certs }}"
+      register: security_rules_info
+
+    - name: Show policy summary
+      ansible.builtin.debug:
+        msg:
+          - "Service groups created: wordpress_tcp_80, wordpress_tcp_3306"
+          - "Security policies created: wordpress_app_policy, wordpress_default_isolation"
+          - "Policy state: {{ policy_state }}"
