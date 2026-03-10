@@ -11,30 +11,32 @@ __metaclass__ = type
 DOCUMENTATION = r"""
 ---
 module: ntnx_storage_containers_info_v2
-short_description: Retrieve information about Nutanix storage continer from PC
+short_description: Retrieve information about Nutanix storage container from PC
 version_added: 2.0.0
 description:
-    - This module retrieves information about Nutanix storage continer from PC.
-    - Fetch particular storage continer info using external ID
-    - Fetch multiple storage continers info with/without using filters, limit, etc.
+    - This module retrieves information about Nutanix storage container from PC.
+    - Fetch particular storage container info using external ID
+    - Fetch multiple storage containers info with/without using filters, limit, etc.
     - This module uses PC v4 APIs based SDKs
 options:
   ext_id:
     description:
-      - The external ID of the storage continer.
-      - If not provided, multiple storage continer info will be fetched.
+      - The external ID of the storage container.
+      - If not provided, multiple storage container info will be fetched.
     type: str
     required: false
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_info_v2
+      - nutanix.ncp.ntnx_logger
+      - nutanix.ncp.ntnx_proxy_v2
 author:
  - Alaa Bishtawi (@alaabishtawi)
  - George Ghawali (@george-ghawali)
 """
 
 EXAMPLES = r"""
-- name: fetch storage continer info using external ID
+- name: fetch storage container info using external ID
   nutanix.ncp.ntnx_storage_containers_info_v2:
     nutanix_host: <pc_ip>
     nutanix_username: <user>
@@ -42,14 +44,14 @@ EXAMPLES = r"""
     ext_id: 00061de6-4a87-6b06-185b-ac1f6b6f97e2
   register: result
 
-- name: fetch all storage continer info
+- name: fetch all storage container info
   nutanix.ncp.ntnx_storage_containers_info_v2:
     nutanix_host: <pc_ip>
     nutanix_username: <user>
     nutanix_password: <pass>
   register: result
 
-- name: fetch all storage continer info with filter
+- name: fetch all storage container info with filter
   nutanix.ncp.ntnx_storage_containers_info_v2:
     nutanix_host: <pc_ip>
     nutanix_username: <user>
@@ -106,6 +108,11 @@ response:
                 "storage_pool_ext_id": "487c142e-6c41-4b10-9585-4feac6bd3c68",
                 "tenant_id": null
             }
+msg:
+  description: This indicates the message if any message occurred
+  returned: When there is an error
+  type: str
+  sample: "Api Exception raised while fetching storage containers info"
 error:
     description: The error message if an error occurs.
     type: str
@@ -116,6 +123,12 @@ ext_id:
     type: str
     returned: always
     sample: "00061de6-4a87-6b06-185b-ac1f6b6f97e2"
+total_available_results:
+    description:
+        - The total number of available storage containers in PC.
+    type: int
+    returned: when all storage containers are fetched
+    sample: 125
 """
 
 import warnings  # noqa: E402
@@ -170,6 +183,9 @@ def get_storage_containers(module, result):
             exception=e,
             msg="Api Exception raised while fetching storage containers info",
         )
+
+    total_available_results = resp.metadata.total_available_results
+    result["total_available_results"] = total_available_results
 
     if getattr(resp, "data", None):
         result["response"] = strip_internal_attributes(resp.to_dict()).get("data")

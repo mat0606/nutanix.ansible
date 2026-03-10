@@ -27,29 +27,76 @@ DOCUMENTATION = r"""
             required: true
             choices: ['ntnx_prism_vm_inventory', 'nutanix.ncp.ntnx_prism_vm_inventory']
         nutanix_hostname:
-            description: Prism central hostname or IP address
-            required: true
+            description:
+                - Prism central hostname or IP address
+                - If not provided, values will be taken from environment variables NUTANIX_HOSTNAME or NUTANIX_HOST
+                - If both are set, NUTANIX_HOSTNAME is preferred over NUTANIX_HOST
+            required: false
             type: str
             env:
                 - name: NUTANIX_HOSTNAME
+                - name: NUTANIX_HOST
         nutanix_username:
-            description: Prism central username
-            required: true
+            description:
+                - Prism central username
+                - If not provided, values will be taken from environment variable NUTANIX_USERNAME
+            required: false
             type: str
             env:
                 - name: NUTANIX_USERNAME
         nutanix_password:
-            description: Prism central password
-            required: true
+            description:
+                - Prism central password
+                - If not provided, values will be taken from environment variable NUTANIX_PASSWORD
+            required: false
             type: str
             env:
                 - name: NUTANIX_PASSWORD
         nutanix_port:
-            description: Prism central port
+            description:
+                - Prism central port
+                - If not provided, values will be taken from environment variable NUTANIX_PORT
+            required: false
             default: "9440"
             type: str
             env:
                 - name: NUTANIX_PORT
+        nutanix_api_key:
+            description:
+                - Prism central API key
+                - If not provided, values will be taken from environment variable NUTANIX_API_KEY
+            required: false
+            type: str
+            env:
+                - name: NUTANIX_API_KEY
+        fetch_all_vms:
+            description:
+                - Set to C(True) to fetch all VMs
+                - Set to C(False) to fetch specified number of VMs based on offset and length
+                - If set to C(True), offset and length will be ignored
+                - By default, this is set to C(False)
+        custom_ansible_host:
+            description:
+                - Optional expression to construct the ansible_host for a VM instead of VM IP.
+                - If provided, it will override ansible_host value with resolved value of the expression.
+                - If not provided, ansible_host value will be set to VM IP as default.
+            required: false
+            type: dict
+            suboptions:
+                expr:
+                    description:
+                        - "Expression to construct the ansible_host for a VM."
+                        - "The expression can use the following variables:"
+                        - "vm_name (VM Name)"
+                        - "cluster (Cluster Name)"
+                        - "cluster_uuid (Cluster UUID)"
+                        - "vm_uuid (VM UUID)"
+                        - "vm_description (VM Description)"
+                        - "Suppose we have a VM with name VM_123 and cluster name Cluster_456"
+                        - >
+                          "Then the expression {vm_name}.nutanix1.{cluster}.nutanix2.com will be resolved to
+                          VM_123.nutanix1.Cluster_456.nutanix2.com as ansible_host"
+                    type: str
         data:
             description:
                 - Pagination support for listing VMs
@@ -63,7 +110,7 @@ DOCUMENTATION = r"""
             default: True
             type: boolean
             env:
-                - name: VALIDATE_CERTS
+                - name: NUTANIX_VALIDATE_CERTS
         filters:
             description:
                 - A list of Jinja2 expressions used to filter the inventory
@@ -73,9 +120,47 @@ DOCUMENTATION = r"""
             type: list
     extends_documentation_fragment:
         - constructed
+        - nutanix.ncp.ntnx_logger
+"""
+Examples = r"""
+Example 1: sample inventory file without using custom_ansible_host
+if nutanix_hostname, nutanix_username, nutanix_password are not set, values will be taken from environment variables
+inventory file starts from here
+plugin: nutanix.ncp.ntnx_prism_vm_inventory
+validate_certs: false
+data: { offset: 0, length: 20 }
+fetch_all_vms: false
+groups:
+  group_1: "'integration' in name"
+  group_2: "'auto' in name"
+  group_3: "'integration' not in name and 'auto' not in name"
+keyed_groups:
+  - prefix: host
+    separator: "_"
+    key: ansible_host
+
+Example 2: sample inventory file with using custom_ansible_host
+if nutanix_hostname, nutanix_username, nutanix_password are not set, values will be taken from environment variables
+inventory file starts from here
+plugin: nutanix.ncp.ntnx_prism_vm_inventory
+validate_certs: false
+data: { offset: 0, length: 20 }
+fetch_all_vms: false
+groups:
+  group_1: "'integration' in name"
+  group_2: "'auto' in name"
+  group_3: "'integration' not in name and 'auto' not in name"
+keyed_groups:
+  - prefix: host
+    separator: "_"
+    key: ansible_host
+custom_ansible_host:
+  expr: "{vm_name}.nutanix1.{cluster}.nutanix2.{cluster_uuid}.nutanix3.{vm_uuid}.nutanix4.com"
 """
 
 import json  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
 import tempfile  # noqa: E402
 
 from ansible.errors import AnsibleError  # noqa: E402
@@ -85,7 +170,19 @@ from ..module_utils.v3.prism import vms  # noqa: E402
 
 
 class Mock_Module:
-    def __init__(self, host, port, username, password, validate_certs=False):
+    def __init__(
+        self,
+        host,
+        port,
+        username,
+        password,
+        validate_certs=False,
+        fetch_all_vms=False,
+        custom_ansible_host=None,
+        nutanix_debug=False,
+        nutanix_log_file=None,
+        nutanix_api_key=None,
+    ):
         self.tmpdir = tempfile.gettempdir()
         self.params = {
             "nutanix_host": host,
@@ -93,11 +190,23 @@ class Mock_Module:
             "nutanix_username": username,
             "nutanix_password": password,
             "validate_certs": validate_certs,
+            "fetch_all_vms": fetch_all_vms,
+            "custom_ansible_host": custom_ansible_host,
             "load_params_without_defaults": False,
+            "nutanix_debug": nutanix_debug,
+            "nutanix_log_file": nutanix_log_file,
+            "nutanix_api_key": nutanix_api_key,
         }
 
     def jsonify(self, data):
         return json.dumps(data)
+
+    def fail_json(self, msg, **kwargs):
+        """Fail with a message"""
+        kwargs["failed"] = True
+        kwargs["msg"] = msg
+        print("\n%s" % self.jsonify(kwargs))
+        raise AnsibleError(self.jsonify(kwargs))
 
 
 class InventoryModule(BaseInventoryPlugin, Constructable):
@@ -118,12 +227,14 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         )
         return path.endswith(inventory_file_fmts)
 
-    def _build_host_vars(self, entity):
+    def _build_host_vars(self, entity, strict=False):
         """
         Build a dictionary of host variables from the raw entity.
         """
         cluster = entity.get("status", {}).get("cluster_reference", {}).get("name")
+        cluster_uuid = entity.get("status", {}).get("cluster_reference", {}).get("uuid")
         vm_name = entity.get("status", {}).get("name")
+        vm_description = entity.get("status", {}).get("description")
         vm_uuid = entity.get("metadata", {}).get("uuid")
         vm_ip = None
 
@@ -136,6 +247,31 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                         break
                 if vm_ip:
                     break
+
+        if getattr(self, "custom_ansible_host", None) and self.custom_ansible_host.get(
+            "expr"
+        ):
+            lookup = {
+                "cluster": cluster,
+                "cluster_uuid": cluster_uuid,
+                "vm_name": vm_name,
+                "vm_description": vm_description,
+                "vm_uuid": vm_uuid,
+            }
+
+            try:
+                vm_ip = re.sub(
+                    r"\{([^}]+)\}",
+                    self.get_replacement_function(lookup),
+                    self.custom_ansible_host.get("expr"),
+                )
+            except Exception as e:
+                if strict:
+                    raise AnsibleError(
+                        "Error formatting ansible_host expression for VM {vm_name}. with uuid {vm_uuid}: {e}".format(
+                            vm_name=vm_name, vm_uuid=vm_uuid, e=str(e)
+                        )
+                    )
 
         # Remove unwanted keys.
         for key in [
@@ -157,26 +293,46 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             "uuid": vm_uuid,
             "name": vm_name,
             "cluster": cluster,
+            "cluster_uuid": cluster_uuid,
+            "description": vm_description,
         }
         host_vars.update(vm_resources)
 
         # Incorporate ntnx_categories if available.
-        if "metadata" in entity and "categories" in entity["metadata"]:
+        host_vars["ntnx_categories"] = {}
+        host_vars["ntnx_categories_mapping"] = {}
+
+        # Only supports showing one value for a key
+        if entity.get("metadata", {}).get("categories"):
             host_vars["ntnx_categories"] = entity["metadata"]["categories"]
+
+        # for category keys having multiple values
+        if entity.get("metadata", {}).get("categories_mapping"):
+            host_vars["ntnx_categories_mapping"] = entity["metadata"][
+                "categories_mapping"
+            ]
 
         return host_vars
 
-    def _should_add_host(self, host_vars, host_filters, strict):
+    def _should_add_host(self, host_vars, entity, host_filters, strict):
         """
-        Evaluate filter expressions against host_vars.
+        Evaluate filter expressions against host_vars and raw entity data.
         Returns True if the host should be added, False otherwise.
         """
         if not host_filters:
             return True
 
+        # Merge entity data with host_vars so filters can access any field
+        # host_vars takes precedence over entity fields
+        filter_vars = {}
+        filter_vars.update(entity.get("status", {}))
+        filter_vars.update(entity.get("metadata", {}))
+        filter_vars.update(entity.get("spec", {}))
+        filter_vars.update(host_vars)
+
         for host_filter in host_filters:
             try:
-                if not self._compose(host_filter, host_vars):
+                if not self._compose(host_filter, filter_vars):
                     return False
             except Exception as e:
                 if strict:
@@ -190,12 +346,48 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         super().parse(inventory, loader, path, cache=cache)
         self._read_config_data(path)
 
-        self.nutanix_hostname = self.get_option("nutanix_hostname")
-        self.nutanix_username = self.get_option("nutanix_username")
-        self.nutanix_password = self.get_option("nutanix_password")
-        self.nutanix_port = self.get_option("nutanix_port")
+        self.nutanix_hostname = (
+            self.get_option("nutanix_hostname")
+            or os.environ.get("NUTANIX_HOSTNAME")
+            or os.environ.get("NUTANIX_HOST")
+        )
+        self.nutanix_username = self.get_option("nutanix_username") or os.environ.get(
+            "NUTANIX_USERNAME"
+        )
+        self.nutanix_password = self.get_option("nutanix_password") or os.environ.get(
+            "NUTANIX_PASSWORD"
+        )
+        self.nutanix_port = self.get_option("nutanix_port") or os.environ.get(
+            "NUTANIX_PORT", "9440"
+        )
+        self.nutanix_api_key = self.get_option("nutanix_api_key") or os.environ.get(
+            "NUTANIX_API_KEY"
+        )
+        # Validate required parameters
+        if not self.nutanix_hostname:
+            raise AnsibleError(
+                "nutanix_host must be provided either in inventory file or as NUTANIX_HOSTNAME environment variable or NUTANIX_HOST environment variable"
+            )
+        if (
+            not self.nutanix_username or not self.nutanix_password
+        ) and not self.nutanix_api_key:
+            raise AnsibleError(
+                "Either nutanix_username and nutanix_password or nutanix_api_key is required"
+            )
         self.data = self.get_option("data")
-        self.validate_certs = self.get_option("validate_certs")
+        self.validate_certs = (
+            self.get_option("validate_certs")
+            or os.environ.get("NUTANIX_VALIDATE_CERTS", "false").lower() == "true"
+        )
+        self.fetch_all_vms = self.get_option("fetch_all_vms")
+        self.custom_ansible_host = self.get_option("custom_ansible_host")
+        self.nutanix_debug = (
+            self.get_option("nutanix_debug")
+            or os.environ.get("NUTANIX_DEBUG", "false").lower() == "true"
+        )
+        self.nutanix_log_file = self.get_option("nutanix_log_file") or os.environ.get(
+            "NUTANIX_LOG_FILE"
+        )
         # Determines if composed variables or groups using nonexistent variables is an error
         strict = self.get_option("strict")
         host_filters = self.get_option("filters")
@@ -206,15 +398,19 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             self.nutanix_username,
             self.nutanix_password,
             self.validate_certs,
+            self.fetch_all_vms,
+            self.custom_ansible_host,
+            self.nutanix_debug,
+            self.nutanix_log_file,
+            self.nutanix_api_key,
         )
         vm = vms.VM(module)
         self.data["offset"] = self.data.get("offset", 0)
-        resp = vm.list(self.data)
-
+        resp = vm.list(data=self.data, fetch_all_vms=self.fetch_all_vms)
         for entity in resp.get("entities", []):
-            host_vars = self._build_host_vars(entity)
+            host_vars = self._build_host_vars(entity, strict=strict)
 
-            if not self._should_add_host(host_vars, host_filters, strict):
+            if not self._should_add_host(host_vars, entity, host_filters, strict):
                 continue
 
             # Add host to inventory.
@@ -224,7 +420,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             vm_uuid = host_vars.get("uuid")
 
             if cluster:
-                self.inventory.add_group(cluster)
+                cluster = self.inventory.add_group(cluster)
                 self.inventory.add_child("all", cluster)
             if vm_name:
                 self.inventory.add_host(vm_name, group=cluster)
@@ -235,6 +431,13 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                 for key, value in host_vars.items():
                     self.inventory.set_variable(vm_name, key, value)
 
+            self.inventory.set_variable(
+                vm_name,
+                "project_reference",
+                entity.get("metadata", {}).get("project_reference", {}),
+            )
+
+            # Add variables created by the user's Jinja2 expressions to the host
             self._set_composite_vars(
                 self.get_option("compose"),
                 host_vars,
@@ -253,3 +456,28 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                 vm_name,
                 strict=strict,
             )
+
+    def get_replacement_function(self, lookup):
+
+        def repl(match):
+            val_key = match.group(1).strip()
+            val = lookup.get(val_key, "")
+            if val_key not in lookup:
+                allowed_vars = ", ".join(f"'{k}'" for k in lookup.keys())
+                raise Exception(
+                    "Variable '{val_key}' not found when formatting ansible_host expression. ".format(
+                        val_key=val_key
+                    )
+                    + "Please use one of the following allowed variables: {allowed_vars}.".format(
+                        allowed_vars=allowed_vars
+                    )
+                )
+            elif val is None or val == "":
+                raise Exception(
+                    "Variable '{val_key}' is not defined or empty".format(
+                        val_key=val_key
+                    )
+                )
+            return val
+
+        return repl

@@ -17,6 +17,7 @@ options:
   stretched_vlan_uuid:
     description:
       - uuid for update or delete of stretched vlan
+      - will be used to update if C(state) is C(present) and to delete if C(state) is C(absent)
     type: str
   vlans:
     description:
@@ -43,6 +44,7 @@ options:
 extends_documentation_fragment:
   - nutanix.ncp.ntnx_ndb_base_module
   - nutanix.ncp.ntnx_operations
+  - nutanix.ncp.ntnx_logger
 author:
   - Prem Karat (@premkarat)
   - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
@@ -184,6 +186,11 @@ def delete_stretched_vlan(module, result):
         module.fail_json(
             msg="stretched_vlan_uuid is required field for delete", **result
         )
+
+    result["uuid"] = uuid
+    if module.check_mode:
+        result["msg"] = "Stretched vlan with uuid:{0} will be deleted.".format(uuid)
+        return
 
     resp = stretched_vlan.delete_stretched_vlan(uuid)
 

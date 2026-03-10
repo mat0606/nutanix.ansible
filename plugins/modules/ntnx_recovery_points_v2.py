@@ -112,6 +112,8 @@ options:
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 author:
     - Abhinav Bansal (@abhinavbansal29)
     - Pradeepsingh Bhati (@bhati-pradeep)
@@ -210,6 +212,11 @@ ext_id:
     returned: always
     type: str
     sample: "d492e754-1792-41a5-8960-e2e87c8fea7d"
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error, module is idempotent or check mode (in delete operation)
+    type: str
+    sample: "Api Exception raised while creating recovery point"
 error:
     description: The error message if an error occurs.
     type: str
@@ -224,7 +231,7 @@ warning:
     description: Warning message if any
     type: str
     returned: when a warning occurs
-    sample: "Only Expiration time Updation is allowed. Can't update other fields."
+    sample: "Only Expiration time update is allowed. Can't update other fields."
 """
 
 import traceback  # noqa: E402
@@ -234,8 +241,8 @@ from datetime import datetime  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.data_protection.api_client import (  # noqa: E402
     get_etag,
@@ -348,7 +355,7 @@ def create_recovery_point(module, result):
     result["task_ext_id"] = task_ext_id
     result["response"] = strip_internal_attributes(resp.data.to_dict())
     if task_ext_id and module.params.get("wait"):
-        task_status = wait_for_completion(module, task_ext_id, True)
+        task_status = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(task_status.to_dict())
         ext_id = get_ext_id_from_task_completion_details(
             task_status, name=TASK_CONSTANTS.CompletetionDetailsName.RECOVERY_POINT
@@ -391,9 +398,9 @@ def update_expiry_date_recovery_point(module, result):
     new_expiration_time = module.params.get("expiration_time")
 
     if new_expiration_time is None:
-        result[
-            "error"
-        ] = "Expiration time is required for updating recovery point and other fields can't be updated."
+        result["error"] = (
+            "Expiration time is required for updating recovery point and other fields can't be updated."
+        )
         module.fail_json(msg="Expiration time is required", **result)
 
     if int(old_expiration_time.timestamp()) == int(
@@ -405,7 +412,7 @@ def update_expiry_date_recovery_point(module, result):
             old_spec.to_dict(), update_spec.to_dict()
         ):
             result["skipped"] = True
-            msg = "Update of other operations is not supported. Only updation of Expiration time is allowed."
+            msg = "Update of other operations is not supported. Only update of Expiration time is allowed."
             module.exit_json(msg=msg, **result)
         else:
             result["skipped"] = True
@@ -413,9 +420,9 @@ def update_expiry_date_recovery_point(module, result):
     elif not check_recovery_point_idempotency_without_expiration(
         old_spec.to_dict(), update_spec.to_dict()
     ):
-        result[
-            "warning"
-        ] = "Only Expiration time Updation is allowed. Can't update other fields."
+        result["warning"] = (
+            "Only Expiration time update is allowed. Can't update other fields."
+        )
 
     expirationTimeSpec = data_protection_sdk.ExpirationTimeSpec()
     expirationTimeSpec.expiration_time = new_expiration_time
@@ -435,7 +442,7 @@ def update_expiry_date_recovery_point(module, result):
     result["task_ext_id"] = task_ext_id
     result["response"] = strip_internal_attributes(resp.data.to_dict())
     if task_ext_id and module.params.get("wait"):
-        task_status = wait_for_completion(module, task_ext_id, True)
+        task_status = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(task_status.to_dict())
         resp = get_recovery_point(module, recovery_points, ext_id)
         result["ext_id"] = ext_id
@@ -447,6 +454,10 @@ def delete_recovery_point(module, result):
     recovery_points = get_recovery_point_api_instance(module)
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
+
+    if module.check_mode:
+        result["msg"] = "Recovery point with ext_id:{0} will be deleted.".format(ext_id)
+        return
 
     old_spec = get_recovery_point(module, recovery_points, ext_id)
 
@@ -469,13 +480,13 @@ def delete_recovery_point(module, result):
     result["response"] = strip_internal_attributes(resp.data.to_dict())
 
     if task_ext_id and module.params.get("wait"):
-        task_status = wait_for_completion(module, task_ext_id, True)
+        task_status = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(task_status.to_dict())
     result["changed"] = True
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[

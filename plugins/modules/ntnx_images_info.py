@@ -26,6 +26,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_info
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Pradeepsingh Bhati (@bhati-pradeep)
@@ -136,7 +137,7 @@ entities:
                         "resources": {
                             "architecture": "X86_64",
                             "image_type": "DISK_IMAGE",
-                            "source_uri": "<ssource-uri>"
+                            "source_uri": "<source-uri>"
                         }
                     },
                     "status": {

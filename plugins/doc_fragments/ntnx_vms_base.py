@@ -42,11 +42,17 @@ options:
         choices:
           - cloud_init
           - sysprep
+      script:
+          description:
+            - Guest customization script.
+            - Mutually exclusive with C(script_path)
+          type: str
       script_path:
         description:
           - Absolute file path to the script.
+          - Mutually exclusive with C(script)
         type: path
-        required: true
+        required: false
       is_overridable:
         description:
           - Flag to allow override of customization during deployment.
@@ -117,6 +123,17 @@ options:
         type: bool
         required: false
         default: true
+      vlan_mode:
+        description:
+          - Specifies the VLAN configuration mode for the virtual NIC
+          - ACCESS mode (default) -> permits only one VLAN per virtual network.
+          - TRUNKED mode -> allows multiple VLANs on a single VM NIC for network-aware user VMs.
+        type: str
+        choices:
+          - ACCESS
+          - TRUNKED
+        required: false
+
   vcpus:
     description:
       - Number of sockets

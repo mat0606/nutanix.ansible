@@ -29,6 +29,7 @@ options:
     address_group_uuid:
         description:
             - uuid of the address group
+            - will be used to update if C(state) is C(present) and to delete if C(state) is C(absent)
             - only required while updating or deleting
         required: false
         type: str
@@ -62,6 +63,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 author:
   - Prem Karat (@premkarat)
   - Pradeepsingh Bhati (@bhati-pradeep)
@@ -192,9 +194,14 @@ def update_address_group(module, result):
 def delete_address_group(module, result):
     address_group = AddressGroup(module)
     uuid = module.params["address_group_uuid"]
+    result["address_group_uuid"] = uuid
+
+    if module.check_mode:
+        result["msg"] = "Address group with uuid:{0} will be deleted.".format(uuid)
+        return
+
     address_group.delete(uuid=uuid, no_response=True)
     result["response"] = {"msg": "Address group deleted successfully"}
-    result["address_group_uuid"] = uuid
     result["changed"] = True
 
 

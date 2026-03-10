@@ -23,6 +23,7 @@ options:
         type: str
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_ndb_info_base_module
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Pradeepsingh Bhati (@bhati-pradeep)
@@ -49,7 +50,7 @@ response:
             "accessLevel": null,
             "dateCreated": "2023-02-25 06:34:44",
             "dateModified": "2023-02-28 00:00:00",
-            "description": "anisble-created-window",
+            "description": "ansible-created-window",
             "entityTaskAssoc": [
                 {
                     "accessLevel": null,

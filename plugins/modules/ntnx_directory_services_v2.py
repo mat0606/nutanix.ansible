@@ -138,6 +138,8 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations_v2
+      - nutanix.ncp.ntnx_logger
+      - nutanix.ncp.ntnx_proxy_v2
 author:
   - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
   - Alaa Bishtawi (@alaa-bish)
@@ -260,8 +262,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.iam.api_client import (  # noqa: E402
     get_directory_service_api_instance,
     get_etag,
@@ -419,6 +421,12 @@ def delete_directory_service(module, directory_services, result):
     result["ext_id"] = ext_id
     current_spec = get_directory_service(module, directory_services, ext_id=ext_id)
 
+    if module.check_mode:
+        result["msg"] = "Directory service with ext_id:{0} will be deleted.".format(
+            ext_id
+        )
+        return
+
     etag = get_etag(data=current_spec)
     if not etag:
         return module.fail_json(
@@ -445,7 +453,7 @@ def delete_directory_service(module, directory_services, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

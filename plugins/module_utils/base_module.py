@@ -6,6 +6,8 @@ from copy import deepcopy
 
 from ansible.module_utils.basic import AnsibleModule, env_fallback
 
+from .constants import DEFAULT_LOG_FILE
+
 __metaclass__ = type
 
 
@@ -21,19 +23,33 @@ class BaseModule(AnsibleModule):
             default="9440", type="str", fallback=(env_fallback, ["NUTANIX_PORT"])
         ),
         nutanix_username=dict(
-            type="str", fallback=(env_fallback, ["NUTANIX_USERNAME"]), required=True
+            type="str", fallback=(env_fallback, ["NUTANIX_USERNAME"]), required=False
         ),
         nutanix_password=dict(
             type="str",
             no_log=True,
             fallback=(env_fallback, ["NUTANIX_PASSWORD"]),
-            required=True,
+            required=False,
+        ),
+        nutanix_api_key=dict(
+            type="str",
+            no_log=True,
+            fallback=(env_fallback, ["NUTANIX_API_KEY"]),
+            required=False,
         ),
         validate_certs=dict(
             type="bool", default=True, fallback=(env_fallback, ["VALIDATE_CERTS"])
         ),
         state=dict(type="str", choices=["present", "absent"], default="present"),
         wait=dict(type="bool", default=True),
+        nutanix_debug=dict(
+            type="bool", default=False, fallback=(env_fallback, ["NUTANIX_DEBUG"])
+        ),
+        nutanix_log_file=dict(
+            type="str",
+            default=DEFAULT_LOG_FILE,
+            fallback=(env_fallback, ["NUTANIX_LOG_FILE"]),
+        ),
     )
 
     def __init__(self, **kwargs):
@@ -48,6 +64,9 @@ class BaseModule(AnsibleModule):
             kwargs["supports_check_mode"] = True
 
         super(BaseModule, self).__init__(**kwargs)
+
+        # Note: Authentication validation is handled by the API client
+        # The env_fallback in argument_spec will populate credentials from environment variables
 
     def strip_extra_attributes(self, argument_spec):
         """

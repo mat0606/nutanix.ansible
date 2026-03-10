@@ -21,7 +21,7 @@ options:
   state:
     description:
       - State of the route.
-      - if C(state) is C(present) and route exteral ID is given, then route will be updated.
+      - if C(state) is C(present) and route external ID is given, then route will be updated.
       - if C(state) is C(present) and route external ID is absent, then route will be created.
       - if C(state) is C(absent) and route external ID is given, then route will be deleted.
     choices: ["present", "absent"]
@@ -199,6 +199,8 @@ options:
 extends_documentation_fragment:
   - nutanix.ncp.ntnx_credentials
   - nutanix.ncp.ntnx_operations_v2
+  - nutanix.ncp.ntnx_logger
+  - nutanix.ncp.ntnx_proxy_v2
 author:
   - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
   - Alaa Bishtawi (@alaa-bish)
@@ -325,6 +327,12 @@ failed:
   type: bool
   returned: always
 
+msg:
+  description: This indicates the message if any message occurred
+  returned: When there is an error, module is idempotent or check mode (in delete operation)
+  type: str
+  sample: "Failed generating create route spec"
+
 error:
   description: Error message if any
   type: str
@@ -337,8 +345,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.network.api_client import (  # noqa: E402
     get_etag,
@@ -536,6 +544,11 @@ def delete_route_table(module, route_api_instance, result):
     route_table_ext_id = module.params.get("route_table_ext_id")
     result["ext_id"] = ext_id
     result["route_table_ext_id"] = route_table_ext_id
+
+    if module.check_mode:
+        result["msg"] = "Route table with ext_id:{0} will be deleted.".format(ext_id)
+        return
+
     resp = None
     try:
         resp = route_api_instance.delete_route_for_route_table_by_id(
@@ -554,7 +567,7 @@ def delete_route_table(module, route_api_instance, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[["state", "absent", ["ext_id"]]],

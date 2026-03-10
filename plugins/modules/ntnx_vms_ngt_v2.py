@@ -93,6 +93,8 @@ options:
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 """
 
 EXAMPLES = r"""
@@ -105,7 +107,7 @@ EXAMPLES = r"""
     ext_id: "98b9dc89-be08-3c56-b554-692b8b676fd1"
     capabilities:
       - SELF_SERVICE_RESTORE
-    credentials:
+    credential:
       username: "admin"
       password: "password"
     reboot_preference:
@@ -153,6 +155,11 @@ changed:
     description: Indicates whether the NGT installation or uninstallation changed the state of the VM.
     type: bool
     returned: always
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error or module is idempotent
+    type: str
+    sample: "Api Exception raised while installing NGT"
 error:
     description: The error message, if any, encountered during the NGT operation.
     type: str
@@ -168,8 +175,8 @@ import warnings  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.prism.tasks import wait_for_completion  # noqa: E402
 from ..module_utils.v4.spec_generator import SpecGenerator  # noqa: E402
 from ..module_utils.v4.utils import (  # noqa: E402
@@ -308,7 +315,7 @@ def uninstall_ngt(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

@@ -6,8 +6,10 @@
       nutanix_username: "{{ username }}"
       nutanix_password: "{{ password }}"
       validate_certs: "{{ validate_certs }}"
+      nutanix_debug: "{{ nutanix_debug | default(omit) }}"
+      nutanix_log_file: "{{ nutanix_log_file | default(omit) }}"
   block:
-    - name: Import Tasks
+    - name: Import create.yml
       ansible.builtin.import_tasks: create.yml
-    - name: Import Tasks
-      ansible.builtin.import_tasks: negativ_scenarios.yml
+    - name: Import negative_scenarios.yml
+      ansible.builtin.import_tasks: negative_scenarios.yml

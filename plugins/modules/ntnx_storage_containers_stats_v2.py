@@ -11,7 +11,7 @@ __metaclass__ = type
 DOCUMENTATION = r"""
 ---
 module: ntnx_storage_containers_stats_v2
-short_description: Retrieve stats about Nutanix storage continer from PC
+short_description: Retrieve stats about Nutanix storage container from PC
 version_added: 2.0.0
 description:
     - Get Stats for a Storage Container
@@ -19,7 +19,7 @@ description:
 options:
   ext_id:
     description:
-      - The external ID of the storage continer.
+      - The external ID of the storage container.
     type: str
     required: true
   start_time:
@@ -56,6 +56,8 @@ options:
         - LAST
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
+      - nutanix.ncp.ntnx_logger
+      - nutanix.ncp.ntnx_proxy_v2
 author:
  - Alaa Bishtawi (@alaabishtawi)
  - George Ghawali (@george-ghawali)
@@ -300,6 +302,11 @@ response:
                         }
                     ]
         }
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error
+    type: str
+    sample: "Api Exception raised while fetching storage containers stats"
 error:
     description: The error message if an error occurs.
     type: str

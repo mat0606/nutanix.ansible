@@ -372,6 +372,8 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations_v2
+      - nutanix.ncp.ntnx_logger
+      - nutanix.ncp.ntnx_proxy_v2
 author:
  - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
  - Alaa Bishtawi (@alaa-bish)
@@ -559,6 +561,11 @@ skipped:
         - Will be returned if operation is skipped.
     type: bool
     returned: always
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error, module is idempotent or check mode (in delete operation)
+    type: str
+    sample: "Api Exception raised while creating subnet"
 error:
     description:
         - Error message if an error occurs.
@@ -572,8 +579,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.network.api_client import (  # noqa: E402
     get_etag,
@@ -745,6 +752,8 @@ def create_subnet(module, result):
 
 
 def check_subnets_idempotency(old_spec, update_spec):
+    strip_internal_attributes(old_spec)
+    strip_internal_attributes(update_spec)
     if old_spec != update_spec:
         return False
     return True
@@ -801,6 +810,10 @@ def delete_subnet(module, result):
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
 
+    if module.check_mode:
+        result["msg"] = "Subnet with ext_id:{0} will be deleted.".format(ext_id)
+        return
+
     current_spec = get_subnet(module, subnets, ext_id=ext_id)
 
     etag = get_etag(data=current_spec)
@@ -830,17 +843,11 @@ def delete_subnet(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[
             ("state", "present", ("name", "ext_id"), True),
-            (
-                "state",
-                "present",
-                ("ext_id", "cluster_reference", "vpc_reference"),
-                True,
-            ),
             ("state", "absent", ("ext_id",)),
         ],
     )

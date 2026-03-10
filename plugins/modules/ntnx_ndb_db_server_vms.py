@@ -27,6 +27,7 @@ options:
     uuid:
         description:
             - uuid of database server vm for updating or deleting vm
+            - will be used to update if C(state) is C(present) and to delete if C(state) is C(absent)
         type: str
     desc:
         description:
@@ -110,7 +111,7 @@ options:
                 type: str
             version_uuid:
                 description:
-                    - version UUID for softwware profile
+                    - version UUID for software profile
                     - if not given then latest version will be used
                 type: str
     time_machine:
@@ -238,6 +239,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_ndb_base_module
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Pradeepsingh Bhati (@bhati-pradeep)
@@ -682,9 +684,12 @@ def delete_db_server(module, result):
         module.fail_json("Failed getting db server delete update spec", **result)
 
     spec["remove"] = not spec["delete"]
+    result["uuid"] = uuid
 
     if module.check_mode:
         result["response"] = spec
+
+        result["msg"] = "Db server with uuid:{0} will be deleted.".format(uuid)
         return
 
     resp = db_servers.delete(data=spec, uuid=uuid)

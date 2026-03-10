@@ -18,6 +18,15 @@ version_added: 2.1.0
 author:
     - Abhinav Bansal (@abhinavbansal29)
 options:
+    state:
+        description:
+            - State of the module.
+            - If state is present, the module will perform LCM inventory.
+            - If state is not present, the module will fail.
+        type: str
+        choices:
+            - present
+        default: present
     cluster_ext_id:
         description:
             - The external ID of the cluster.
@@ -29,6 +38,8 @@ options:
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 """
 
 EXAMPLES = r"""
@@ -89,6 +100,11 @@ task_ext_id:
     type: str
     returned: always
     sample: "00061de6-4a87-6b06-185b-ac1f6b6f97e2"
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error
+    type: str
+    sample: "Api Exception raised while performing inventory"
 changed:
     description: Whether the module made any changes
     type: bool
@@ -98,8 +114,8 @@ changed:
 
 import warnings  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.lcm.api_client import get_inventory_api_instance  # noqa: E402
 from ..module_utils.v4.prism.tasks import wait_for_completion  # noqa: E402
 from ..module_utils.v4.utils import (  # noqa: E402
@@ -113,6 +129,7 @@ warnings.filterwarnings("ignore", message="Unverified HTTPS request is being mad
 
 def get_module_spec():
     module_args = dict(
+        state=dict(type="str", default="present", choices=["present"]),
         cluster_ext_id=dict(type="str"),
     )
     return module_args
@@ -141,7 +158,7 @@ def lcm_inventory(module, api_instance, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

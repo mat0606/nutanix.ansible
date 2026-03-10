@@ -10,6 +10,10 @@ from base64 import b64encode
 
 from ansible.module_utils.basic import missing_required_lib
 
+from ...constants import ALLOW_VERSION_NEGOTIATION
+from ..api_logger import setup_api_logging
+from ..utils import _apply_proxy_from_env
+
 PRISM_SDK_IMP_ERROR = None
 try:
     import ntnx_prism_py_client
@@ -30,18 +34,44 @@ def get_pc_api_client(module):
     config = ntnx_prism_py_client.Configuration()
     config.host = module.params.get("nutanix_host")
     config.port = module.params.get("nutanix_port")
-    config.username = module.params.get("nutanix_username")
-    config.password = module.params.get("nutanix_password")
+    api_key = module.params.get("nutanix_api_key")
+    nutanix_username = module.params.get("nutanix_username")
+    nutanix_password = module.params.get("nutanix_password")
+    if (not nutanix_username or not nutanix_password) and not (api_key):
+        module.fail_json(
+            msg="Either nutanix_username and nutanix_password or nutanix_api_key is required"
+        )
+    if api_key:
+        config.set_api_key(api_key)
+    else:
+        config.username = nutanix_username
+        config.password = nutanix_password
     config.verify_ssl = module.params.get("validate_certs")
-    client = ntnx_prism_py_client.ApiClient(configuration=config)
+    _apply_proxy_from_env(config, module)
+    client = ntnx_prism_py_client.ApiClient(
+        configuration=config, allow_version_negotiation=ALLOW_VERSION_NEGOTIATION
+    )
 
-    cred = "{0}:{1}".format(config.username, config.password)
-    try:
-        encoded_cred = b64encode(bytes(cred, encoding="ascii")).decode("ascii")
-    except BaseException:
-        encoded_cred = b64encode(bytes(cred).encode("ascii")).decode("ascii")
-    auth_header = "Basic " + encoded_cred
-    client.add_default_header(header_name="Authorization", header_value=auth_header)
+    if not api_key:
+        cred = "{0}:{1}".format(config.username, config.password)
+        try:
+            encoded_cred = b64encode(bytes(cred, encoding="ascii")).decode("ascii")
+        except BaseException:
+            encoded_cred = b64encode(bytes(cred).encode("ascii")).decode("ascii")
+        auth_header = "Basic " + encoded_cred
+        client.add_default_header(header_name="Authorization", header_value=auth_header)
+
+    # Workaround as set_api_key not working as expected for prism central api
+    if api_key:
+        default_headers = getattr(client, "_ApiClient__default_headers", {})
+        if "X-ntnx-api-key" not in default_headers:
+            client.add_default_header(
+                header_name="X-ntnx-api-key", header_value=api_key
+            )
+
+    # Setup API logging if debug is enabled
+    setup_api_logging(module, client)
+
     return client
 
 
@@ -76,3 +106,15 @@ def get_domain_manager_backup_api_instance(module):
     """
     api_client = get_pc_api_client(module)
     return ntnx_prism_py_client.DomainManagerBackupsApi(api_client=api_client)
+
+
+def get_tasks_api_instance(module):
+    """
+    This method will return tasks api instance.
+    Args:
+        module (object): Ansible module object
+    return:
+        api_instance (object): tasks api instance
+    """
+    api_client = get_pc_api_client(module)
+    return ntnx_prism_py_client.TasksApi(api_client=api_client)

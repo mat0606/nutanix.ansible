@@ -1,9 +1,14 @@
+---
+# Variables required before running this playbook:
+# - vpc
+# - external_nat_subnet
+
 - name: Start testing static routes info tests
   ansible.builtin.debug:
     msg: Start testing static routes info tests
 
 - name: Create new static routes
-  ntnx_static_routes:
+  nutanix.ncp.ntnx_static_routes:
     vpc_uuid: "{{ vpc.uuid }}"
     static_routes:
       - destination: "0.0.0.0/0"
@@ -36,7 +41,7 @@
     seconds: 60
 
 - name: Get all static routes
-  ntnx_static_routes_info:
+  nutanix.ncp.ntnx_static_routes_info:
     vpc_uuid: "{{ vpc.uuid }}"
   register: result
 
@@ -60,12 +65,12 @@
       - result.response.status.resources.default_route["nexthop"]["external_subnet_reference"]["name"] == "{{ external_nat_subnet.name }}"
 
     fail_msg: "Fail: Unable to get static routes for vpc"
-    success_msg: "Succes"
+    success_msg: "Success"
 
 ###########################################################################################################
 
 - name: Remove all routes for cleanup
-  ntnx_static_routes:
+  nutanix.ncp.ntnx_static_routes:
     vpc_uuid: "{{ vpc.uuid }}"
     remove_all_routes: true
   register: result

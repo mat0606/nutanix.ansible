@@ -184,6 +184,8 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations_v2
+      - nutanix.ncp.ntnx_logger
+      - nutanix.ncp.ntnx_proxy_v2
 author:
  - Alaa Bishtawi (@alaabishtawi)
  - George Ghawali (@george-ghawali)
@@ -296,6 +298,11 @@ changed:
   returned: always
   type: bool
   sample: true
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error, module is idempotent or check mode (in delete operation)
+    type: str
+    sample: "Failed generating create storage container spec"
 error:
   description: This field typically holds information about if the task have errors that occurred during the task execution
   returned: always
@@ -311,8 +318,8 @@ skipped:
 import traceback  # noqa: E402
 from copy import deepcopy  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.clusters_mgmt.api_client import (  # noqa: E402
     get_etag,
     get_storage_containers_api_instance,
@@ -502,6 +509,13 @@ def update_storage_container(module, storage_container_api, result):
 def delete_storage_container(module, storage_container_api, result):
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
+
+    if module.check_mode:
+        result["msg"] = "Storage container with ext_id:{0} will be deleted.".format(
+            ext_id
+        )
+        return
+
     ignore_small_files = module.params.get("ignore_small_files")
     try:
         resp = storage_container_api.delete_storage_container_by_id(
@@ -525,7 +539,7 @@ def delete_storage_container(module, storage_container_api, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[

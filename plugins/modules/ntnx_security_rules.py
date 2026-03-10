@@ -9,37 +9,10 @@ __metaclass__ = type
 
 DOCUMENTATION = r"""
 module: ntnx_security_rules
-short_description: security_rule module which suports security_rule CRUD operations
+short_description: security_rule module which supports security_rule CRUD operations
 version_added: 1.3.0
 description: 'Create, Update, Delete security_rule'
 options:
-  nutanix_host:
-    description:
-      - PC hostname or IP address
-    type: str
-    required: true
-  nutanix_port:
-    description:
-      - PC port
-    type: str
-    default: "9440"
-    required: false
-  nutanix_username:
-    description:
-      - PC username
-    type: str
-    required: true
-  nutanix_password:
-    description:
-      - PC password;
-    required: true
-    type: str
-  validate_certs:
-    description:
-      - Set value to C(False) to skip validation for self signed certificates
-      - This is not recommended for production setup
-    type: bool
-    default: true
   state:
     description:
       - Specify state of security_rule
@@ -61,8 +34,14 @@ options:
     description: security_rule Name
     required: false
     type: str
+  desc:
+    description: security_rule Description
+    required: false
+    type: str
   security_rule_uuid:
-    description: security_rule UUID
+    description:
+        - security_rule UUID
+        - will be used to update if C(state) is C(present) and to delete if C(state) is C(absent)
     type: str
   allow_ipv6_traffic:
     description: Allow traffic from ipv6
@@ -869,6 +848,10 @@ options:
         description:
             - A category key and value.
             - Need to provide only one.
+extends_documentation_fragment:
+    - nutanix.ncp.ntnx_credentials
+    - nutanix.ncp.ntnx_operations
+    - nutanix.ncp.ntnx_logger
 author:
   - Prem Karat (@premkarat)
   - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
@@ -879,6 +862,7 @@ EXAMPLES = r"""
 - name: create app security rule
   ntnx_security_rules:
     name: test_app_rule
+    desc: App Security Rule
     allow_ipv6_traffic: true
     policy_hitlog: true
     app_rule:
@@ -984,6 +968,7 @@ spec:
   type: dict
   sample:
     name: test_app_rule
+    description: App Security Rule
     resources:
       allow_ipv6_traffic: true
       app_rule:
@@ -1183,6 +1168,7 @@ def get_module_spec():
     )
     module_args = dict(
         name=dict(type="str"),
+        desc=dict(type="str"),
         security_rule_uuid=dict(type="str"),
         allow_ipv6_traffic=dict(type="bool"),
         policy_hitlog=dict(type="bool"),
@@ -1283,11 +1269,17 @@ def delete_security_rule(module, result):
         result["error"] = "Missing parameter security_rule_uuid in playbook"
         module.fail_json(msg="Failed deleting security_rule", **result)
 
+    result["security_rule_uuid"] = security_rule_uuid
+    if module.check_mode:
+        result["msg"] = "Security rule with uuid:{0} will be deleted.".format(
+            security_rule_uuid
+        )
+        return
+
     security_rule = SecurityRule(module)
     resp = security_rule.delete(security_rule_uuid)
     result["changed"] = True
     result["response"] = resp
-    result["security_rule_uuid"] = security_rule_uuid
     result["task_uuid"] = resp["status"]["execution_context"]["task_uuid"]
 
     if module.params.get("wait"):

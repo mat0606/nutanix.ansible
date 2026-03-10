@@ -38,9 +38,19 @@ options:
               and the ISO is being inserted to update the configuration of these tools.
         type: bool
         default: false
+    state:
+        description:
+            - If state is present, the module will insert the NGT ISO into the virtual machine.
+            - Valid choices are "present" only.
+            - If state is not present, the module will fail.
+        type: str
+        choices: ['present']
+        default: present
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 """
 
 EXAMPLES = r"""
@@ -62,6 +72,11 @@ changed:
     description: Indicates whether the state of the system has changed.
     returned: always
     type: bool
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error or module is idempotent
+    type: str
+    sample: "Api Exception raised while inserting NGT iso in vm"
 error:
     description: Error message if an error occurred during the module execution.
     returned: on error
@@ -99,8 +114,8 @@ task_ext_id:
 import traceback  # noqa: E402
 import warnings  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.prism.tasks import wait_for_completion  # noqa: E402
 from ..module_utils.v4.spec_generator import SpecGenerator  # noqa: E402
 from ..module_utils.v4.utils import (  # noqa: E402
@@ -127,6 +142,7 @@ warnings.filterwarnings("ignore", message="Unverified HTTPS request is being mad
 
 def get_module_spec():
     module_args = dict(
+        state=dict(type="str", default="present", choices=["present"]),
         ext_id=dict(type="str", required=True),
         capabilities=dict(
             type="list",
@@ -138,15 +154,8 @@ def get_module_spec():
     return module_args
 
 
-def insert_ngt_iso(module, result):
+def insert_ngt_iso(module, ext_id, result):
     vmm = get_vm_api_instance(module)
-    ext_id = module.params.get("ext_id")
-    if not ext_id:
-        return module.fail_json(
-            msg="vm ext_id is required to inserting NGT iso", **result
-        )
-
-    result["ext_id"] = ext_id
 
     status = vmm.get_guest_tools_by_id(extId=ext_id)
     etag = get_etag(status)
@@ -185,7 +194,7 @@ def insert_ngt_iso(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )
@@ -201,7 +210,13 @@ def run_module():
         "response": None,
         "ext_id": None,
     }
-    insert_ngt_iso(module, result)
+    ext_id = module.params.get("ext_id")
+    if not ext_id:
+        return module.fail_json(
+            msg="vm ext_id is required to inserting NGT iso", **result
+        )
+    result["ext_id"] = ext_id
+    insert_ngt_iso(module, ext_id, result)
     module.exit_json(**result)
 
 

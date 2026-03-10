@@ -7,12 +7,14 @@ __metaclass__ = type
 import copy
 import json
 import os
+import time
 from base64 import b64encode
 
 from ansible.module_utils._text import to_text
 from ansible.module_utils.urls import fetch_url
 
 from .. import utils
+from ..v4.api_logger import APILogger
 
 try:
     from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -36,6 +38,7 @@ class Entity(object):
         self.base_url = self._build_url(module, scheme, resource_type)
         self.headers = self._build_headers(module, additional_headers)
         self.cookies = cookies
+        self.logger = APILogger(module)
 
     def create(
         self,
@@ -179,6 +182,15 @@ class Entity(object):
             no_response=no_response,
             timeout=timeout,
         )
+        if resp and resp.get("state") == "ERROR":
+            if raise_error:
+                self.module.fail_json(
+                    msg="Failed fetching URL: {0}".format(url),
+                    error=resp.get("message_list"),
+                    response=resp,
+                )
+            else:
+                return resp
         if resp:
             custom_filters = self.module.params.get("custom_filter")
 
@@ -328,7 +340,11 @@ class Entity(object):
             headers.update(additional_headers)
         usr = module.params.get("nutanix_username")
         pas = module.params.get("nutanix_password")
-        if usr and pas:
+        nutanix_api_key = module.params.get("nutanix_api_key")
+        if nutanix_api_key:
+            # API key takes precedence (same as V4)
+            headers.update({"X-ntnx-api-key": nutanix_api_key})
+        elif usr and pas:
             cred = "{0}:{1}".format(usr, pas)
             try:
                 encoded_cred = b64encode(bytes(cred, encoding="ascii")).decode("ascii")
@@ -336,6 +352,13 @@ class Entity(object):
                 encoded_cred = b64encode(bytes(cred).encode("ascii")).decode("ascii")
             auth_header = "Basic " + encoded_cred
             headers.update({"Authorization": auth_header})
+        else:
+            self.module.fail_json(
+                msg="Either nutanix_username and nutanix_password or nutanix_api_key is required",
+                status_code=400,
+                error="Either nutanix_username and nutanix_password or nutanix_api_key is required",
+                response=None,
+            )
         return headers
 
     def _build_url_with_query(self, url, query):
@@ -356,6 +379,9 @@ class Entity(object):
         timeout=30,
         **kwargs  # fmt: skip
     ):
+
+        start_time = time.time()
+
         # only jsonify if content-type supports, added to avoid incase of form-url-encodeded type data
         if self.headers["Content-Type"] == "application/json" and data is not None:
             data = self.module.jsonify(data)
@@ -375,6 +401,7 @@ class Entity(object):
         )
 
         status_code = info.get("status")
+        elapsed_time = time.time() - start_time
 
         body = None
 
@@ -406,6 +433,33 @@ class Entity(object):
         except ValueError:
             resp_json = None
 
+        # Log the API call
+
+        try:
+            self.logger.log_api_call(
+                method=method,
+                url=url,
+                query_params=kwargs.get("query"),
+                headers=headers,
+                body=data,
+                response=resp_json,
+                status_code=status_code,
+                elapsed_time=elapsed_time,
+            )
+        except Exception as e:
+            self.logger.log_api_call(
+                method=method,
+                url=url,
+                query_params=kwargs.get("query"),
+                headers=headers,
+                body=data,
+                response=None,
+                status_code=resp.status if hasattr(resp, "status") else None,
+                elapsed_time=elapsed_time,
+                error=e,
+            )
+            raise e
+
         if not raise_error:
             return resp_json
 
@@ -429,8 +483,13 @@ class Entity(object):
             return {"status_code": status_code}
 
         if resp_json is None:
+            if info.get("msg"):
+                resp_json_msg = "{}".format(info.get("msg"))
+            else:
+                resp_json_msg = "Failed to convert API response to json"
+
             self.module.fail_json(
-                msg="Failed to convert API response to json",
+                msg=resp_json_msg,
                 status_code=status_code,
                 error=body,
                 response=resp_json,

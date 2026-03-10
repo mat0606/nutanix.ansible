@@ -15,6 +15,11 @@ version_added: 2.0.0
 description:
     - Create, Update and delete VMs in Nutanix AHV based PC
     - This module uses PC v4 APIs based SDKs
+    - Workaround for the disk resizing issue in the SDK.
+        - After VM creation, use ntnx_vms_disks_v2 module to resize the disks.
+        - Disk resizing gets skipped from API during VM create. Module will start working as expected when API is fixed.
+        - Contact Nutanix Support to check status on this enhancement request for API.
+
 notes:
     - During vm update, Update or create of subresources like disks, nics, cd_roms, gpus, serial_ports, etc. is not supported.
     - Use subresources specific modules to update or create subresources.
@@ -100,9 +105,24 @@ options:
                     - The external ID of the category.
                 required: true
                 type: str
+    project:
+        description: Reference to a project.
+        type: dict
+        suboptions:
+            ext_id:
+                description: The globally unique identifier of a project. It should be of type UUID.
+                type: str
+    host:
+        description: Reference to a host.
+        type: dict
+        suboptions:
+            ext_id:
+                description: The globally unique identifier of a host. It should be of type UUID.
+                type: str
     cluster:
         description:
             - The cluster reference for the VM.
+            - Cluster automatic selection is supported.
         type: dict
         suboptions:
             ext_id:
@@ -301,6 +321,45 @@ options:
                 required: false
                 type: dict
                 suboptions:
+                    boot_device:
+                        description:
+                            - The boot device settings for UEFI boot.
+                        type: dict
+                        suboptions:
+                            boot_device_disk:
+                                description: Specification for booting from disk.
+                                type: dict
+                                suboptions:
+                                    disk_address:
+                                        description: Address specification for the disk.
+                                        type: dict
+                                        suboptions:
+                                            bus_type:
+                                                description:
+                                                    - Bus type for the device.
+                                                    - The acceptable values are SCSI, IDE, PCI, SATA, SPAPR (only PPC).
+                                                type: str
+                                                choices: ["SCSI", "IDE", "PCI", "SATA", "SPAPR"]
+                                                required: true
+                                            index:
+                                                description:
+                                                    - Device index on the bus.
+                                                    - This field is ignored unless the bus details are specified.
+                                                type: int
+                            boot_device_nic:
+                                description: Specification for booting from network interface controller (NIC).
+                                type: dict
+                                suboptions:
+                                        mac_address:
+                                                description: Mac address
+                                                type: str
+                    boot_order:
+                        description:
+                            - Indicates the order of device types in which the VM should try to boot from.
+                              If the boot device order is not provided the system will decide an appropriate boot device order.
+                        type: list
+                        elements: str
+                        choices: ["CDROM", "NETWORK", "DISK"]
                     is_secure_boot_enabled:
                         description: Indicate whether to enable secure boot or not.
                         type: bool
@@ -388,7 +447,8 @@ options:
         type: bool
     machine_type:
         description:
-            - The machine type for the VM.
+            - Machine type for the VM.
+            - Machine type Q35 is required for secure boot and does not support IDE disks.
         required: false
         type: str
         choices: ["PC", "PSERIES", "Q35"]
@@ -707,6 +767,7 @@ options:
             backing_info:
                 description:
                     - The backing information for the NIC.
+                    - Deprecated, use C(nic_backing_info) instead.
                 type: dict
                 suboptions:
                     model:
@@ -732,9 +793,43 @@ options:
                             - The number of queues for the NIC.
                         type: int
                         required: false
+            nic_backing_info:
+                description:
+                    - Backing Information about how NIC is associated with a VM.
+                type: dict
+                suboptions:
+                    virtual_ethernet_nic:
+                        description:
+                            - The virtual ethernet NIC information.
+                        type: dict
+                        suboptions:
+                            model:
+                                description:
+                                    - The model of the NIC.
+                                type: str
+                                choices:
+                                    - VIRTIO
+                                    - E1000
+                                required: false
+                            mac_address:
+                                description:
+                                    - The MAC address of the NIC.
+                                type: str
+                                required: false
+                            is_connected:
+                                description:
+                                    - Whether the NIC needs to be connected or not.
+                                type: bool
+                                required: false
+                            num_queues:
+                                description:
+                                    - The number of queues for the NIC.
+                                type: int
+                                required: false
             network_info:
                 description:
                     - The network configuration for the NIC.
+                    - Deprecated, use C(nic_network_info) instead.
                 type: dict
                 suboptions:
                     nic_type:
@@ -841,6 +936,121 @@ options:
                                         type: int
                                         required: false
                         required: false
+            nic_network_info:
+                description:
+                    - Network configuration for the NIC.
+                type: dict
+                suboptions:
+                    virtual_ethernet_nic_network_info:
+                        description:
+                            - The network configuration for the virtual ethernet NIC.
+                        type: dict
+                        suboptions:
+                            nic_type:
+                                description:
+                                    - The type of the NIC.
+                                type: str
+                                choices:
+                                    - NORMAL_NIC
+                                    - DIRECT_NIC
+                                    - NETWORK_FUNCTION_NIC
+                                    - SPAN_DESTINATION_NIC
+                                required: false
+                            network_function_chain:
+                                description:
+                                    - The network function chain for the NIC.
+                                type: dict
+                                suboptions:
+                                    ext_id:
+                                        description:
+                                            - The external ID of the network function chain.
+                                        type: str
+                                        required: true
+                                required: false
+                            network_function_nic_type:
+                                description:
+                                    - The type of the network function NIC.
+                                type: str
+                                choices:
+                                    - INGRESS
+                                    - EGRESS
+                                    - TAP
+                                required: false
+                            subnet:
+                                description:
+                                    - The subnet for the NIC.
+                                type: dict
+                                suboptions:
+                                    ext_id:
+                                        description:
+                                            - The external ID of the subnet.
+                                        type: str
+                                        required: true
+                                required: false
+                            vlan_mode:
+                                description:
+                                    - The VLAN mode for the NIC.
+                                type: str
+                                choices:
+                                    - ACCESS
+                                    - TRUNK
+                                required: false
+                            trunked_vlans:
+                                description:
+                                    - The trunked VLANs for the NIC.
+                                type: list
+                                elements: int
+                                required: false
+                            should_allow_unknown_macs:
+                                description:
+                                    - Whether to allow unknown MAC addresses or not.
+                                type: bool
+                                required: false
+                            ipv4_config:
+                                description:
+                                    - The IPv4 configuration for the NIC.
+                                type: dict
+                                suboptions:
+                                    should_assign_ip:
+                                        description:
+                                            - Whether to assign an IP address or not.
+                                        type: bool
+                                        required: false
+                                    ip_address:
+                                        description:
+                                            - The IP address for the NIC.
+                                        type: dict
+                                        suboptions:
+                                            value:
+                                                description:
+                                                    - The IP address value.
+                                                type: str
+                                                required: True
+                                            prefix_length:
+                                                description:
+                                                    - The prefix length for the IP address.
+                                                    - Can be skipped, default it will be 32.
+                                                type: int
+                                                required: false
+                                    secondary_ip_address_list:
+                                        description:
+                                            - The list of secondary IP addresses for the NIC.
+                                        type: list
+                                        elements: dict
+                                        suboptions:
+                                            value:
+                                                description:
+                                                    - The IP address value.
+                                                type: str
+                                                required: true
+                                            prefix_length:
+                                                description:
+                                                    - The prefix length for the IP address.
+                                                    - Can be skipped, default it will be 32.
+                                                type: int
+                                                required: false
+                                required: false
+                required: false
     gpus:
         description:
             - The list of GPUs for the VM.
@@ -924,6 +1134,8 @@ options:
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 author:
  - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
  - Alaa Bishtawi (@alaa-bish)
@@ -1080,12 +1292,17 @@ changed:
   type: bool
   sample: true
 
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error, module is idempotent or check mode (in delete operation)
+    type: str
+    sample: "Api Exception raised while creating vm"
+
 error:
   description: This field typically holds information about if the task have errors that occurred during the task execution
   returned: always
   type: bool
   sample: false
-
 
 ext_id:
   description:
@@ -1109,8 +1326,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.prism.tasks import (  # noqa: E402
     get_entity_ext_id_from_task,
@@ -1205,6 +1422,18 @@ def update_vm(module, result):
         result["error"] = err
         module.fail_json(msg="Failed generating vm update spec", **result)
 
+    # If is_apc_enabled is False in playbook params, don't send cpu_model in update_spec
+    apc_config_params = module.params.get("apc_config")
+    if (
+        apc_config_params is not None
+        and isinstance(apc_config_params, dict)
+        and apc_config_params.get("is_apc_enabled") is False
+        and hasattr(update_spec, "apc_config")
+        and update_spec.apc_config is not None
+        and hasattr(update_spec.apc_config, "cpu_model")
+    ):
+        update_spec.apc_config.cpu_model = None
+
     # check for idempotency
     if check_idempotency(current_spec, update_spec):
         result["skipped"] = True
@@ -1238,6 +1467,11 @@ def update_vm(module, result):
 def delete_vm(module, result):
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
+
+    if module.check_mode:
+        result["msg"] = "VM with ext_id:{0} will be deleted.".format(ext_id)
+        return
+
     vms = get_vm_api_instance(module)
     vm = get_vm(module, vms, ext_id)
     etag = get_etag(vm)
@@ -1261,7 +1495,7 @@ def delete_vm(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )
