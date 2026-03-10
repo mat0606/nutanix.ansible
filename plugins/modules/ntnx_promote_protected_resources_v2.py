@@ -20,6 +20,15 @@ description:
   - Promote VG will create new VG in the another local cluster registered under same PC for the given VG external ID.
   - Promote VM uses secondary site PC IP and its credentials in C(nutanix_host) where Promote VG uses primary site PC IP.
 options:
+  state:
+    description:
+      - State of the module.
+      - If state is present, the module will promote a protected resource.
+      - If state is not present, the module will fail.
+    type: str
+    choices:
+      - present
+    default: present
   ext_id:
     description:
       - The external identifier of a protected VM or volume group.
@@ -49,16 +58,24 @@ options:
       - Remote Prism central username
       - C(nutanix_username). If not set then the value of the C(NUTANIX_USERNAME), environment variable is used.
     type: str
-    required: true
+    required: false
   nutanix_password:
     description:
       - Remote Prism central password
       - C(nutanix_password). If not set then the value of the C(NUTANIX_PASSWORD), environment variable is used.
-    required: true
     type: str
+    required: false
+  nutanix_api_key:
+    description:
+      - Remote Prism central API key. Created using Service Account API Key in Prism Central.
+      - C(nutanix_api_key). If not set then the value of the C(NUTANIX_API_KEY), environment variable is used.
+    type: str
+    required: false
 extends_documentation_fragment:
   - nutanix.ncp.ntnx_credentials
   - nutanix.ncp.ntnx_operations_v2
+  - nutanix.ncp.ntnx_logger
+  - nutanix.ncp.ntnx_proxy_v2
 author:
   - George Ghawali (@george-ghawali)
 """
@@ -134,6 +151,12 @@ changed:
   type: bool
   sample: true
 
+msg:
+  description: This indicates the message if any message occurred
+  returned: When there is an error
+  type: str
+  sample: "Api Exception raised while promoting protected resource"
+
 error:
   description: This field typically holds information about if the task have errors that occurred during the task execution
   returned: When an error occurs
@@ -159,8 +182,8 @@ task_ext_id:
   sample: "ZXJnb24=:af298405-1d59-4c28-9b78-f8f94a5adf2d"
 """
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.data_protection.api_client import (  # noqa: E402
     get_protected_resource_api_instance,
 )
@@ -174,6 +197,7 @@ from ..module_utils.v4.utils import (  # noqa: E402
 def get_module_spec():
 
     module_args = dict(
+        state=dict(type="str", default="present", choices=["present"]),
         ext_id=dict(type="str", required=True),
     )
     return module_args
@@ -205,7 +229,7 @@ def promote_protected_resource(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

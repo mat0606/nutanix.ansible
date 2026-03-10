@@ -17,6 +17,15 @@ description:
     - Restore recovery points using external ID
     - This module uses PC v4 APIs based SDKs
 options:
+    state:
+        description:
+            - State of the module.
+            - If state is present, the module will restore a recovery point.
+            - If state is not present, the module will fail.
+        type: str
+        choices:
+            - present
+        default: present
     ext_id:
         description:
             - External ID to restore recovery point
@@ -63,6 +72,8 @@ options:
 extends_documentation_fragment:
         - nutanix.ncp.ntnx_credentials
         - nutanix.ncp.ntnx_operations_v2
+        - nutanix.ncp.ntnx_logger
+        - nutanix.ncp.ntnx_proxy_v2
 author:
     - Abhinav Bansal (@abhinavbansal29)
     - Pradeepsingh Bhati (@bhati-pradeep)
@@ -144,6 +155,11 @@ changed:
     returned: always
     type: bool
     sample: true
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error
+    type: str
+    sample: "Api Exception raised while restoring recovery point"
 error:
     description: This field typically holds information about if the task have errors that occurred during the task execution
     type: str
@@ -171,8 +187,8 @@ import warnings  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.data_protection.api_client import (  # noqa: E402
     get_etag,
@@ -219,6 +235,7 @@ def get_module_spec():
     )
 
     module_args = dict(
+        state=dict(type="str", default="present", choices=["present"]),
         ext_id=dict(type="str", required=True),
         cluster_ext_id=dict(type="str"),
         vm_recovery_point_restore_overrides=dict(
@@ -294,7 +311,7 @@ def restore_recovery_points(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

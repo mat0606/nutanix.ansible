@@ -49,6 +49,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_ndb_base_module
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Pradeepsingh Bhati (@bhati-pradeep)
@@ -74,7 +75,7 @@ EXAMPLES = r"""
 """
 RETURN = r"""
 response:
-  description: An intentful representation of a authorizisation status
+  description: An intentful representation of a authorization status
   returned: always
   type: dict
   sample: {

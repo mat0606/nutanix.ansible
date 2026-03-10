@@ -10,9 +10,9 @@ __metaclass__ = type
 DOCUMENTATION = r"""
 ---
 module: ntnx_nodes_network_info_v2
-short_description: Get netowrk information for uncofigured cluster nodes
+short_description: Get network information for unconfigured cluster nodes
 description:
-  - This module allows you to Get netowrk information for uncofigured cluster nodes.
+  - This module allows you to Get network information for unconfigured cluster nodes.
   - This module uses PC v4 APIs based SDKs
 version_added: "2.0.0"
 options:
@@ -179,13 +179,15 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations_v2
+      - nutanix.ncp.ntnx_logger
+      - nutanix.ncp.ntnx_proxy_v2
 author:
  - Alaa Bishtawi (@alaabishtawi)
  - George Ghawali (@george-ghawali)
 """
 
 EXAMPLES = r"""
-- name: Get network information for uncofigured cluster nodes
+- name: Get network information for unconfigured cluster nodes
   nutanix.ncp.ntnx_nodes_network_info_v2:
     nutanix_host: <pc_ip>
     nutanix_username: <user>
@@ -204,7 +206,7 @@ EXAMPLES = r"""
 RETURN = r"""
 response:
     description:
-        - Response for getting network information for uncofigured cluster nodes.
+        - Response for getting network information for unconfigured cluster nodes.
     type: dict
     returned: always
     sample:
@@ -266,6 +268,11 @@ response:
         "task_response_type": "NETWORKING_DETAILS",
         "tenant_id": null
       }
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error
+    type: str
+    sample: "API Exception while getting network information for cluster nodes"
 error:
     description: The error message if an error occurs.
     type: str
@@ -286,8 +293,8 @@ task_ext_id:
 
 import traceback  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.clusters_mgmt.api_client import (  # noqa: E402
     get_clusters_api_instance,
 )
@@ -414,7 +421,7 @@ def get_nodes_network_information(module, cluster_node_api, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

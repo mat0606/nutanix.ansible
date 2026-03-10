@@ -26,6 +26,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_info
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
@@ -154,7 +155,7 @@ entities:
                                     "name": "qanucalm",
                                     "uuid": "00000000-0000-0000-0000-000000000000"
                                 },
-                                "distinguished_name": "<distinugished-name>"
+                                "distinguished_name": "<distinguished-name>"
                             },
                             "display_name": "name1",
                             "projects_reference_list": [],

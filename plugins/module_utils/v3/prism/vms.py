@@ -56,14 +56,18 @@ class VM(Prism):
         no_response=False,
         timeout=30,
         max_length=500,
+        fetch_all_vms=False,
     ):
-        if data.get("length", 0) > max_length:
+        if fetch_all_vms or data.get("length", 0) > max_length:
             spec = deepcopy(data)
             resp = {"entities": []}
             total_matches = None
             total_length = spec["length"]
             spec["length"] = max_length
             spec["offset"] = spec.get("offset", 0)
+            if fetch_all_vms:
+                sub_resp = super(VM, self).list(spec)
+                total_length = sub_resp["metadata"].get("total_matches")
             while True:
                 sub_resp = super(VM, self).list(spec)
                 resp["entities"].extend(sub_resp["entities"])
@@ -298,6 +302,8 @@ class VM(Prism):
                 nic["mac_address"] = network["mac_address"]
 
             nic["is_connected"] = network["is_connected"]
+            if network.get("vlan_mode"):
+                nic["vlan_mode"] = network["vlan_mode"]
             if network.get("subnet"):
 
                 if network.get("subnet", {}).get("uuid"):
@@ -385,14 +391,16 @@ class VM(Prism):
         return payload, None
 
     def _build_spec_gc(self, payload, param):
-        fpath = param["script_path"]
-
-        if not os.path.exists(fpath):
+        fpath = param.get("script_path")
+        script = param.get("script")
+        if fpath and not os.path.exists(fpath):
             error = "File not found: {0}".format(fpath)
             return None, error
-
-        with open(fpath, "rb") as f:
-            content = base64.b64encode(f.read())
+        if fpath and os.path.exists(fpath):
+            with open(fpath, "rb") as f:
+                content = base64.b64encode(f.read()).decode("ascii")
+        elif script:
+            content = base64.b64encode(script.encode("ascii")).decode("ascii")
         gc_spec = {"guest_customization": {}}
 
         if "sysprep" in param["type"]:
@@ -497,7 +505,8 @@ class VM(Prism):
                 if error:
                     return None, error
 
-                disk["data_source_reference"]["uuid"] = uuid
+                disk.setdefault("data_source_reference", {})["uuid"] = uuid
+                disk.setdefault("data_source_reference", {})["kind"] = "image"
 
         if (
             not disk.get("storage_config", {})

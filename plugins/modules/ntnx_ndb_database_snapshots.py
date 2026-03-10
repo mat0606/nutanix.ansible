@@ -21,10 +21,11 @@ options:
       snapshot_uuid:
         description:
             - snapshot uuid for delete or update
+            - will be used to update if C(state) is C(present) and to delete if C(state) is C(absent)
         type: str
       name:
         description:
-            - name of snaphsot.
+            - name of snapshot.
             - required for create
             - update is allowed
         type: str
@@ -62,6 +63,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_ndb_base_module
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Pradeepsingh Bhati (@bhati-pradeep)
@@ -263,6 +265,7 @@ def get_module_spec():
 # Notes:
 # 1. Currently we only poll for source snapshot create. Replication task is not polled.
 
+
 # Create snapshot
 def create_snapshot(module, result):
     time_machine_uuid = module.params.get("time_machine_uuid")
@@ -365,6 +368,11 @@ def delete_snapshot(module, result):
 
     snapshots = Snapshot(module)
     resp = snapshots.delete(uuid=snapshot_uuid)
+    result["snapshot_uuid"] = snapshot_uuid
+
+    if module.check_mode:
+        result["msg"] = "Snapshot with uuid:{0} will be deleted.".format(snapshot_uuid)
+        return
 
     if module.params.get("wait"):
         ops_uuid = resp["operationId"]

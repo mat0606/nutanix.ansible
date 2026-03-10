@@ -152,6 +152,8 @@ author:
 extends_documentation_fragment:
   - nutanix.ncp.ntnx_credentials
   - nutanix.ncp.ntnx_operations_v2
+  - nutanix.ncp.ntnx_logger
+  - nutanix.ncp.ntnx_proxy_v2
 """
 
 EXAMPLES = r"""
@@ -170,6 +172,22 @@ EXAMPLES = r"""
             image_ext_id: "b988b5ae-da2d-424c-8530-51529a0efb52"
     state: present
     wait: true
+
+- name: Eject ISO from CD ROM of a VM
+  ntnx_vms_cd_rom_iso_v2:
+    nutanix_host: "{{ ip }}"
+    nutanix_username: "{{ username }}"
+    nutanix_password: "{{ password }}"
+    validate_certs: false
+    state: absent
+    vm_ext_id: "98b9dc89-be08-3c56-b554-692b8b676fd6"
+    ext_id: "e1651169-f9df-4785-bdff-7a94b1cf04e0"
+    backing_info:
+      data_source:
+        reference:
+          image_reference:
+            image_ext_id: "b988b5ae-da2d-424c-8530-51529a0efb52"
+  register: result
 """
 
 RETURN = r"""
@@ -217,6 +235,11 @@ response:
             ],
             "warnings": null
         }
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error
+    type: str
+    sample: "Failed generating insert iso in cd rom spec"
 error:
     description: The error message if an error occurred.
     type: str
@@ -249,15 +272,15 @@ import warnings  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.prism.tasks import wait_for_completion  # noqa: E402
 from ..module_utils.v4.spec_generator import SpecGenerator  # noqa: E402
 from ..module_utils.v4.utils import (  # noqa: E402
     raise_api_exception,
     strip_internal_attributes,
 )
-from ..module_utils.v4.vmm.api_client import get_api_client, get_etag  # noqa: E402
+from ..module_utils.v4.vmm.api_client import get_etag, get_vm_api_instance  # noqa: E402
 from ..module_utils.v4.vmm.helpers import get_cd_rom, get_vm  # noqa: E402
 from ..module_utils.v4.vmm.spec.vms import VmSpecs as vm_specs  # noqa: E402
 
@@ -281,11 +304,6 @@ def get_module_spec():
     )
     module_args.update(vm_specs.get_cd_rom_spec())
     return module_args
-
-
-def get_vm_api_instance(module):
-    api_client = get_api_client(module)
-    return vmm_sdk.VmApi(api_client=api_client)
 
 
 def insert_iso(module, vms, result):
@@ -343,9 +361,9 @@ def eject_iso(module, vms, result):
     result["ext_id"] = ext_id
 
     if module.check_mode:
-        result[
-            "response"
-        ] = "ISO will be ejected from CD ROM with external ID: {0}".format(ext_id)
+        result["response"] = (
+            "ISO will be ejected from CD ROM with external ID: {0}".format(ext_id)
+        )
 
         return
 
@@ -378,7 +396,7 @@ def eject_iso(module, vms, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

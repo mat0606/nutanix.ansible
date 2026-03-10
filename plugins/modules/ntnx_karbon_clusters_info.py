@@ -26,6 +26,7 @@ options:
         description: write
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
@@ -139,7 +140,7 @@ kube_config:
     returned: if fetch_kubeconfig is true
     type: str
 certificate:
-    description: ssh certifcate
+    description: ssh certificate
     returned: if fetch_ssh_credentials is true
     type: str
 expiry_time:

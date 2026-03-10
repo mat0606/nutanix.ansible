@@ -72,6 +72,8 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations_v2
+      - nutanix.ncp.ntnx_logger
+      - nutanix.ncp.ntnx_proxy_v2
 author:
  - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
  - Alaa Bishtawi (@alaa-bish)
@@ -95,7 +97,7 @@ EXAMPLES = r"""
 
 - name: delete address group
   nutanix.ncp.ntnx_address_groups_v2:
-    state: present
+    state: absent
     nutanix_host: "{{ ip }}"
     nutanix_username: "{{ username }}"
     nutanix_password: "{{ password }}"
@@ -138,6 +140,12 @@ changed:
   type: bool
   sample: true
 
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error, module is idempotent or check mode (in delete operation)
+    type: str
+    sample: "Api Exception raised while creating address group"
+
 error:
   description: This field typically holds information about if the task have errors that occurred during the task execution
   returned: always
@@ -163,8 +171,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.flow.api_client import (  # noqa: E402
     get_address_groups_api_instance,
@@ -252,7 +260,7 @@ def create_address_group(module, result):
     result["task_ext_id"] = task_ext_id
     result["response"] = strip_internal_attributes(resp.data.to_dict())
     if task_ext_id and module.params.get("wait"):
-        task_status = wait_for_completion(module, task_ext_id, True)
+        task_status = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(task_status.to_dict())
         ext_id = get_entity_ext_id_from_task(
             task_status, rel=TASK_CONSTANTS.RelEntityType.ADDRESS_GROUP
@@ -311,7 +319,7 @@ def update_address_group(module, result):
     result["response"] = strip_internal_attributes(resp.data.to_dict())
 
     if task_ext_id and module.params.get("wait"):
-        wait_for_completion(module, task_ext_id, True)
+        wait_for_completion(module, task_ext_id)
         resp = get_address_group(module, address_groups, ext_id)
         result["response"] = strip_internal_attributes(resp.to_dict())
 
@@ -322,6 +330,10 @@ def delete_address_group(module, result):
     address_groups = get_address_groups_api_instance(module)
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
+
+    if module.check_mode:
+        result["msg"] = "Address group with ext_id:{0} will be deleted.".format(ext_id)
+        return
 
     current_spec = get_address_group(module, address_groups, ext_id)
 
@@ -347,14 +359,14 @@ def delete_address_group(module, result):
     result["response"] = strip_internal_attributes(resp.data.to_dict())
 
     if task_ext_id and module.params.get("wait"):
-        resp = wait_for_completion(module, task_ext_id, True)
+        resp = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(resp.to_dict())
 
     result["changed"] = True
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[

@@ -55,10 +55,12 @@ options:
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 """
 
 EXAMPLES = r"""
-- name: Attach VM1 to VG
+- name: Attach VM to VG
   nutanix.ncp.ntnx_volume_groups_vms_v2:
     nutanix_host: "{{ ip }}"
     nutanix_username: "{{ username }}"
@@ -69,14 +71,14 @@ EXAMPLES = r"""
     index: 1
   register: result
 
-- name: Attach VM2 to VG
-  nutanix.ncp.ntnx_volume_groups_vms_v2:
+- name: Detach VM from VG
+  ntnx_volume_groups_vms_v2:
     nutanix_host: "{{ ip }}"
     nutanix_username: "{{ username }}"
     nutanix_password: "{{ password }}"
-    state: "present"
+    state: absent
     volume_group_ext_id: 0005b6b1-0b3b-4b3b-8b3b-0b3b4b3b4b35
-    ext_id: 0005b6b1-0b3b-4b3b-8b3b-0b3b4b3b213213
+    ext_id: 0005b6b1-0b3b-4b3b-8b3b-0b3b4b3b4b3b
   register: result
 """
 
@@ -137,6 +139,11 @@ task_ext_id:
     type: str
     returned: always
     sample: "0005b6b1-0b3b-4b3b-8b3b-0b3b4b3b4b3b"
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error
+    type: str
+    sample: "Failed generating attach VM to volume group spec"
 error:
     description: The error message if any.
     type: str
@@ -154,8 +161,8 @@ import warnings  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.prism.tasks import wait_for_completion  # noqa: E402
 from ..module_utils.v4.spec_generator import SpecGenerator  # noqa: E402
 from ..module_utils.v4.utils import (  # noqa: E402
@@ -276,7 +283,7 @@ def detach_vm(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

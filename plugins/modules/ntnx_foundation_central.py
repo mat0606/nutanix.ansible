@@ -291,6 +291,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
@@ -363,7 +364,7 @@ EXAMPLES = r"""
 """
 
 RETURN = r"""
-respone:
+response:
   description: Sample response when only Imaging is done.
   returned: always
   type: dict
@@ -714,6 +715,11 @@ def _get_node_progress_messages(progress, entity_type, entity_name):
 def deleteCluster(module, result):
     cluster_uuid = module.params.get("imaged_cluster_uuid")
     cluster = ImagedCluster(module)
+
+    if module.check_mode:
+        result["imaged_cluster_uuid"] = cluster_uuid
+        result["msg"] = "Cluster with uuid:{0} will be deleted.".format(cluster_uuid)
+        return
 
     resp = cluster.delete(cluster_uuid, no_response=True)
     result["response"] = resp

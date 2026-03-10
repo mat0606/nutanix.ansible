@@ -17,6 +17,23 @@ description:
   - This module allows you to create, update, and delete protection policy in Nutanix Prism Central.
   - This module uses PC v4 APIs based SDKs
 options:
+  nutanix_username:
+      description:
+          - The username to authenticate with the Nutanix Prism Central.
+          - Required as nutanix_api_key is not supported for Multi PC Protection Policy.
+      type: str
+      required: true
+  nutanix_password:
+      description:
+          - The password to authenticate with the Nutanix Prism Central.
+          - Required as nutanix_api_key is not supported for Multi PC Protection Policy.
+      type: str
+      required: true
+  nutanix_api_key:
+      description:
+          - Not Supported as this module is for Multi PC Protection Policy.
+      type: str
+      required: false
   state:
     description:
       - if C(state) is present, it will create or update the protection policy.
@@ -217,6 +234,13 @@ options:
               - Auto suspend timeout if there is a connection failure between locations for synchronous replication.
             type: int
             required: false
+          is_replication_paused:
+            description:
+              - Indicates whether replication is paused for all VMs and volume groups associated with the remote replication location.
+              - This field is ignored in create requests (treated as a no-op) and can only be used in update requests to pause or resume scheduled replication.
+              - Only 0 RPO schedules support this field.
+            type: bool
+            required: false
   category_ids:
     description:
       - Specifies the list of external identifiers of categories that must be added to the protection policy.
@@ -226,6 +250,8 @@ options:
 extends_documentation_fragment:
   - nutanix.ncp.ntnx_credentials
   - nutanix.ncp.ntnx_operations_v2
+  - nutanix.ncp.ntnx_logger
+  - nutanix.ncp.ntnx_proxy_v2
 author:
   - George Ghawali (@george-ghawali)
 """
@@ -461,6 +487,12 @@ skipped:
   type: bool
   sample: false
 
+msg:
+  description: This indicates the message if any message occurred
+  returned: When there is an error, module is idempotent or check mode (in delete operation)
+  type: str
+  sample: "Api Exception raised while creating protection policy"
+
 error:
   description: This indicates the error message if any error occurred
   returned: When an error occurs
@@ -471,10 +503,10 @@ import traceback  # noqa: E402
 import warnings  # noqa: E402
 from copy import deepcopy  # noqa: E402
 
-from ansible.module_utils.basic import missing_required_lib  # noqa: E402
+from ansible.module_utils.basic import env_fallback, missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.data_policies.api_client import (  # noqa: E402
     get_protection_policies_api_instance,
@@ -580,6 +612,7 @@ def get_module_spec():
         ),
         start_time=dict(type="str"),
         sync_replication_auto_suspend_timeout_seconds=dict(type="int"),
+        is_replication_paused=dict(type="bool"),
     )
     replication_configurations_spec = dict(
         source_location_label=dict(type="str", required=True),
@@ -591,6 +624,15 @@ def get_module_spec():
         ),
     )
     module_args = dict(
+        nutanix_username=dict(
+            type="str", fallback=(env_fallback, ["NUTANIX_USERNAME"]), required=True
+        ),
+        nutanix_password=dict(
+            type="str",
+            no_log=True,
+            fallback=(env_fallback, ["NUTANIX_PASSWORD"]),
+            required=True,
+        ),
         ext_id=dict(type="str"),
         name=dict(type="str"),
         description=dict(type="str"),
@@ -654,6 +696,18 @@ def create_protection_policy(module, protection_policies, result):
 
 
 def check_for_idempotency(old_spec, update_spec):
+
+    if len(old_spec.get("replication_configurations", [])) != len(
+        update_spec.get("replication_configurations", [])
+    ):
+        return False
+    for i in range(len(old_spec.get("replication_configurations", []))):
+        old_spec.get("replication_configurations", [])[i].get("schedule", {}).pop(
+            "schedule_ext_id", None
+        )
+        update_spec.get("replication_configurations", [])[i].get("schedule", {}).pop(
+            "schedule_ext_id", None
+        )
     if old_spec != update_spec:
         return False
     return True
@@ -679,8 +733,9 @@ def update_protection_policy(module, protection_policies, result):
     if module.check_mode:
         result["response"] = strip_internal_attributes(update_spec.to_dict())
         return
-
-    if check_for_idempotency(old_spec, update_spec):
+    old_spec_dict = strip_internal_attributes(old_spec.to_dict())
+    update_spec_dict = strip_internal_attributes(update_spec.to_dict())
+    if check_for_idempotency(old_spec_dict, update_spec_dict):
         result["skipped"] = True
         module.exit_json(msg="Nothing to change.")
 
@@ -700,7 +755,7 @@ def update_protection_policy(module, protection_policies, result):
     result["task_ext_id"] = task_ext_id
     result["response"] = strip_internal_attributes(resp.data.to_dict())
     if task_ext_id and module.params.get("wait"):
-        task_status = wait_for_completion(module, task_ext_id, True)
+        task_status = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(task_status.to_dict())
         resp = get_protection_policy(module, protection_policies, ext_id)
         result["response"] = strip_internal_attributes(resp.to_dict())
@@ -710,6 +765,13 @@ def update_protection_policy(module, protection_policies, result):
 def delete_protection_policy(module, protection_policies, result):
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
+
+    if module.check_mode:
+        result["msg"] = "Protection policy with ext_id:{0} will be deleted.".format(
+            ext_id
+        )
+        return
+
     resp = None
     try:
         resp = protection_policies.delete_protection_policy_by_id(extId=ext_id)
@@ -722,13 +784,13 @@ def delete_protection_policy(module, protection_policies, result):
     task_ext_id = resp.data.ext_id
     result["task_ext_id"] = task_ext_id
     if task_ext_id and module.params.get("wait"):
-        task_status = wait_for_completion(module, task_ext_id, True)
+        task_status = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(task_status.to_dict())
     result["changed"] = True
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[

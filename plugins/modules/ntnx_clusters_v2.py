@@ -362,6 +362,84 @@ options:
                   - The FQDN value.
                 type: str
                 required: true
+      ntp_server_config_list:
+        description:
+          - NTP server configuration list.
+          - Supported only in update cluster operation.
+        type: list
+        elements: dict
+        required: false
+        suboptions:
+          ntp_server_address:
+            description:
+              - NTP server address.
+            type: dict
+            required: true
+            suboptions:
+              ipv4:
+                description:
+                  - The IPv4 address of the NTP server.
+                type: dict
+                required: false
+                suboptions:
+                  value:
+                    description:
+                      - The value of the NTP server IP address.
+                    type: str
+                    required: true
+                  prefix_length:
+                    description:
+                      - The prefix for the NTP server IP address.
+                    type: int
+                    required: false
+                    default: 32
+              ipv6:
+                description:
+                  - The IPv6 address of the NTP server.
+                type: dict
+                required: false
+                suboptions:
+                  value:
+                    description:
+                      - The value of the NTP server IPv6 address.
+                    type: str
+                    required: true
+                  prefix_length:
+                    description:
+                      - The prefix for the NTP server IPv6 address.
+                    type: int
+                    required: false
+                    default: 128
+              fqdn:
+                description:
+                  - The Fully Qualified Domain Name (FQDN) of the NTP server.
+                type: dict
+                required: false
+                suboptions:
+                  value:
+                    description:
+                      - The value of the NTP server FQDN.
+                    type: str
+                    required: true
+          encryption_algorithm:
+            description:
+              - Encryption algorithm used for NTP server authentication.
+            type: str
+            required: false
+            choices:
+              - "SHA256"
+              - "SHA384"
+              - "SHA512"
+          encryption_key:
+            description:
+              - Encryption key in hexadecimal format used for NTP server authentication.
+            type: str
+            required: false
+          encryption_key_id:
+            description:
+              - Encryption key Id used for NTP server authentication.
+            type: int
+            required: false
       name_server_ip_list:
         description:
           - The list of name servers.
@@ -741,8 +819,9 @@ options:
             required: true
   categories:
     description:
-      - The categories of the cluster.
-    type: dict
+      - The extIDs of categories of the cluster.
+    type: list
+    elements: str
   container_name:
     description:
       - The name of the container.
@@ -765,6 +844,8 @@ options:
 extends_documentation_fragment:
   - nutanix.ncp.ntnx_credentials
   - nutanix.ncp.ntnx_operations_v2
+  - nutanix.ncp.ntnx_logger
+  - nutanix.ncp.ntnx_proxy_v2
 author:
   - Pradeepsingh Bhati (@bhati-pradeep)
 """
@@ -1035,8 +1116,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.clusters_mgmt.api_client import (  # noqa: E402
     get_clusters_api_instance,
     get_etag,
@@ -1111,12 +1192,26 @@ def create_cluster(module, result):
 
 
 def check_cluster_idempotency(current_spec, update_spec):
-
+    current_spec = strip_internal_attributes(current_spec.to_dict())
+    update_spec = strip_internal_attributes(update_spec.to_dict())
+    current_network = current_spec.get("network") or {}
+    update_network = update_spec.get("network") or {}
+    current_ntp_server_config = current_network.get("ntp_server_config_list") or []
+    update_ntp_server_config = update_network.get("ntp_server_config_list") or []
+    if len(current_ntp_server_config) != len(update_ntp_server_config):
+        return False
     # trigger update if smtp server password is set
-    if getattr(update_spec.network, "smtp_server", None):
-        if getattr(update_spec.network.smtp_server, "server", None):
-            if getattr(update_spec.network.smtp_server.server, "password", None):
-                return False
+    smtp_server = update_network.get("smtp_server") or {}
+    server = smtp_server.get("server") or {}
+    if server.get("password"):
+        return False
+    for current_ntp, update_ntp in zip(
+        current_ntp_server_config, update_ntp_server_config
+    ):
+        if isinstance(current_ntp, dict):
+            current_ntp["encryption_key"] = None
+        if isinstance(update_ntp, dict):
+            update_ntp["encryption_key"] = None
     if current_spec != update_spec:
         return False
     return True
@@ -1207,7 +1302,7 @@ def destroy_cluster(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
     )

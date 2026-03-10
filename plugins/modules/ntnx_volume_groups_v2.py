@@ -13,16 +13,18 @@ DOCUMENTATION = r"""
 module: ntnx_volume_groups_v2
 short_description: Manage Nutanix volume group in PC
 description:
-    - This module allows you to create and delete volume group in Nutanix PC.
+    - This module allows you to create, update and delete volume group in Nutanix PC.
     - This module uses PC v4 APIs based SDKs
 version_added: "2.0.0"
 author:
  - Pradeepsingh Bhati (@bhati-pradeep)
+ - Abhinav Bansal (@abhinavbansal29)
 options:
     state:
         description:
             - Specify state
             - If C(state) is set to C(present) then module will create volume group.
+            - if C(state) is set to C(present) and C(ext_id) is provided then module will update volume group.
             - if C(state) is set to C(absent) then module will delete volume group.
         choices:
             - present
@@ -156,6 +158,8 @@ options:
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 """
 
 EXAMPLES = r"""
@@ -190,6 +194,21 @@ EXAMPLES = r"""
     name: "{{vg1_name}}"
     description: "Volume group 1"
     cluster_reference: 0005b6b1-0b3b-4b3b-8b3b-0b3b4b3b4b35
+  register: result
+  ignore_errors: true
+
+- name: Update Volume group
+  ntnx_volume_groups_v2:
+    nutanix_host: "{{ ip }}"
+    nutanix_username: "{{ username }}"
+    nutanix_password: "{{ password }}"
+    state: "present"
+    ext_id: 0005b6b1-0b3b-4b3b-8b3b-0b3b4b3b4b67
+    name: "{{ vg1_name }}-updated"
+    description: "Volume group 1 updated"
+    should_load_balance_vm_attachments: false
+    sharing_status: "NOT_SHARED"
+    is_hidden: false
   register: result
   ignore_errors: true
 
@@ -252,11 +271,15 @@ task_ext_id:
     type: str
     returned: always
     sample: "0005b6b1-0b3b-4b3b-8b3b-0b3b4b3b4b3b"
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error, module is idempotent or check mode (in delete operation)
+    type: str
+    sample: "Failed generating create volume group spec"
 error:
     description: The error message if any.
     type: str
     returned: when error occurs
-    sample: "Failed generating create volume group spec"
 changed:
     description: Indicates whether the resource has changed.
     type: bool
@@ -266,11 +289,12 @@ changed:
 
 import traceback  # noqa: E402
 import warnings  # noqa: E402
+from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.prism.tasks import (  # noqa: E402
     get_entity_ext_id_from_task,
@@ -351,9 +375,69 @@ def create_vg(module, result):
     result["changed"] = True
 
 
+def check_idempotency(current_spec, update_spec):
+    if current_spec != update_spec:
+        return False
+    return True
+
+
+def update_vg(module, result):
+    ext_id = module.params.get("ext_id")
+    result["ext_id"] = ext_id
+
+    vgs = get_vg_api_instance(module)
+    current_spec = get_volume_group(module, vgs, ext_id)
+
+    sg = SpecGenerator(module)
+    update_spec, err = sg.generate_spec(obj=deepcopy(current_spec))
+
+    default_spec = volumes_sdk.VolumeGroup()
+    spec, err = sg.generate_spec(obj=default_spec)
+
+    if err:
+        result["error"] = err
+        module.fail_json(msg="Failed generating update volume group spec", **result)
+
+    # check for idempotency
+    if check_idempotency(current_spec, update_spec):
+        result["skipped"] = True
+        module.exit_json(msg="Nothing to change.", **result)
+
+    if module.check_mode:
+        result["response"] = strip_internal_attributes(spec.to_dict())
+        return
+
+    etag = get_etag(current_spec)
+    kwargs = {"if_match": etag}
+    resp = None
+    try:
+        resp = vgs.update_volume_group_by_id(extId=ext_id, body=spec, **kwargs)
+    except Exception as e:
+        raise_api_exception(
+            module=module,
+            exception=e,
+            msg="Api Exception raised while updating volume group",
+        )
+
+    task_ext_id = resp.data.ext_id
+    result["task_ext_id"] = task_ext_id
+    result["response"] = strip_internal_attributes(resp.data.to_dict())
+    if task_ext_id and module.params.get("wait"):
+        wait_for_completion(module, task_ext_id)
+        resp = get_volume_group(module, vgs, ext_id)
+        result["response"] = strip_internal_attributes(resp.to_dict())
+
+    result["changed"] = True
+
+
 def delete_vg(module, result):
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
+
+    if module.check_mode:
+        result["msg"] = "VG with ext_id:{0} will be deleted.".format(ext_id)
+        return
+
     vgs = get_vg_api_instance(module)
     vg = get_volume_group(module, vgs, ext_id)
     etag = get_etag(vg)
@@ -377,7 +461,7 @@ def delete_vg(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[
@@ -401,8 +485,7 @@ def run_module():
     state = module.params.get("state")
     if state == "present":
         if module.params.get("ext_id"):
-            # Update not supported for pc.2024.1 release.
-            pass
+            update_vg(module, result)
         else:
             create_vg(module, result)
     else:

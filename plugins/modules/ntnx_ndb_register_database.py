@@ -182,7 +182,7 @@ options:
                 default: true
     postgres:
         description:
-            - potgres related configuration
+            - postgres related configuration
         type: dict
         suboptions:
             listener_port:
@@ -192,7 +192,7 @@ options:
                 default: "5432"
             db_name:
                 description:
-                    - intial database that would be added
+                    - initial database that would be added
                 type: str
                 required: true
             db_password:
@@ -272,6 +272,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_ndb_base_module
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 
 author:
  - Prem Karat (@premkarat)
@@ -280,7 +281,7 @@ author:
 """
 
 EXAMPLES = r"""
-- name: regsiter database from registered vm
+- name: register database from registered vm
   ntnx_ndb_register_database:
     wait: true
 
@@ -314,7 +315,7 @@ EXAMPLES = r"""
 
   register: result
 
-- name: register database from unregistred vm
+- name: register database from unregistered vm
   ntnx_ndb_register_database:
     wait: true
     name: "{{db1_name}}"

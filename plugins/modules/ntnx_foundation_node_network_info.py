@@ -22,6 +22,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_foundation_base_module
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
@@ -83,7 +84,7 @@ def get_node_network_details(module, result):
     timeout = module.params.get("timeout")
     resp = node_network_details.retrieve(nodes, timeout)
     if not resp:
-        result["error"] = "Faied to retrieve node network details"
+        result["error"] = "Failed to retrieve node network details"
         module.fail_json(
             msg="Failed to retrieve node network details via foundation", **result
         )

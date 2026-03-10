@@ -27,6 +27,8 @@ options:
 extends_documentation_fragment:
   - nutanix.ncp.ntnx_credentials
   - nutanix.ncp.ntnx_info_v2
+  - nutanix.ncp.ntnx_logger
+  - nutanix.ncp.ntnx_proxy_v2
 """
 
 EXAMPLES = r"""
@@ -81,6 +83,17 @@ error:
   description: The error message if an error occurs.
   type: str
   returned: when an error occurs
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error
+    type: str
+    sample: "Api Exception raised while fetching images info"
+total_available_results:
+    description:
+        - The total number of available images in PC.
+    type: int
+    returned: when all images are fetched
+    sample: 125
 """
 
 import warnings  # noqa: E402
@@ -140,6 +153,9 @@ def get_images(module, result):
             exception=e,
             msg="Api Exception raised while fetching images info",
         )
+
+    total_available_results = resp.metadata.total_available_results
+    result["total_available_results"] = total_available_results
 
     result["response"] = strip_internal_attributes(resp.to_dict()).get("data")
 

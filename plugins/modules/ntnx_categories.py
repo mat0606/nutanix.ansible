@@ -43,6 +43,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 author:
  - Prem Karat (@premkarat)
  - Pradeepsingh Bhati (@bhati-pradeep)
@@ -277,6 +278,11 @@ def delete_categories(module, result):
         for v in resp.get("entities", []):
             category_key_values.append(v["value"])
         delete_category_values(module, name, category_key_values)
+
+        if module.check_mode:
+            result["category_name"] = name
+            result["msg"] = "Category with name:{0} will be deleted.".format(name)
+            return
 
         # delete the category
         resp = _category_key.delete(uuid=name, no_response=True)

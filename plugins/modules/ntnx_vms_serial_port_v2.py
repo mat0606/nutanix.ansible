@@ -55,6 +55,8 @@ author:
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 """
 
 EXAMPLES = r"""
@@ -107,6 +109,11 @@ response:
                 "links": null,
                 "tenant_id": null
             }
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error, module is idempotent or check mode (in delete operation)
+    type: str
+    sample: "Failed generating create vm serial port Spec"
 error:
   description: The error message if an error occurs.
   type: str
@@ -130,8 +137,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.prism.tasks import (  # noqa: E402
     wait_for_completion,
@@ -284,6 +291,10 @@ def delete_serial_port(module, result):
     result["vm_ext_id"] = vm_ext_id
     result["ext_id"] = ext_id
 
+    if module.check_mode:
+        result["msg"] = "Serial port with ext_id:{0} will be deleted.".format(ext_id)
+        return
+
     vmm = get_vm_api_instance(module)
     serial_port = get_serial_port(module, vmm, ext_id, vm_ext_id=vm_ext_id)
     etag = get_etag(serial_port)
@@ -307,7 +318,7 @@ def delete_serial_port(module, result):
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[("state", "absent", ("ext_id",))],

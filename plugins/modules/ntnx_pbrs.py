@@ -51,7 +51,7 @@ options:
         type: bool
       network:
         description:
-          - Traffic from specfic network address
+          - Traffic from specific network address
           - Mutually exclusive with C(any) and C(external)
         type: dict
         suboptions:
@@ -77,7 +77,7 @@ options:
         type: bool
       network:
         description:
-          - Traffic to specfic network address
+          - Traffic to specific network address
           - Mutually exclusive with C(any) and C(external)
         type: dict
         suboptions:
@@ -172,6 +172,7 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations
+      - nutanix.ncp.ntnx_logger
 author:
   - Prem Karat (@premkarat)
   - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
@@ -502,10 +503,15 @@ def delete_pbr(module, result):
     pbr_uuid = module.params["pbr_uuid"]
 
     pbr = Pbr(module)
+
+    result["pbr_uuid"] = pbr_uuid
+    if module.check_mode:
+        result["msg"] = "Pbr with uuid:{0} will be deleted.".format(pbr_uuid)
+        return
+
     resp = pbr.delete(pbr_uuid)
     result["changed"] = True
     result["response"] = resp
-    result["pbr_uuid"] = pbr_uuid
     result["task_uuid"] = resp["status"]["execution_context"]["task_uuid"]
 
     if module.params.get("wait"):

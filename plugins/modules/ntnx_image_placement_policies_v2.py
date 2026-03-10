@@ -119,6 +119,8 @@ options:
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_operations_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 notes:
     - This module follows two steps update process. Configuration update and enforcement state update.
     - If enforcement state is changed, then task_ext_id will have the task id of enforcement state update.
@@ -209,6 +211,11 @@ changed:
     description: Indicates whether the image placement policy was changed.
     type: bool
     returned: always
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error, module is idempotent or check mode (in delete operation)
+    type: str
+    sample: "Failed generating create Image Placement Policy Spec"
 error:
     description: The error message if an error occurred during the image placement policy operation.
     type: str
@@ -225,8 +232,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks  # noqa: E402
 from ..module_utils.v4.prism.tasks import (  # noqa: E402
     get_entity_ext_id_from_task,
@@ -476,6 +483,10 @@ def delete_policy(module, result):
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
 
+    if module.check_mode:
+        result["msg"] = "Policy with ext_id:{0} will be deleted.".format(ext_id)
+        return
+
     current_spec = get_policy(module, policies, ext_id=ext_id)
 
     etag = get_etag(data=current_spec)
@@ -499,13 +510,13 @@ def delete_policy(module, result):
     result["task_ext_id"] = task_ext_id
     result["response"] = strip_internal_attributes(resp.data.to_dict())
     if task_ext_id and module.params.get("wait"):
-        resp = wait_for_completion(module, task_ext_id, True)
+        resp = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(resp.to_dict())
     result["changed"] = True
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[

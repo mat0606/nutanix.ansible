@@ -37,16 +37,26 @@ options:
     nutanix_username:
         description:
             - The username to authenticate with the Nutanix Prism Element.
+            - Required as nutanix_api_key is not supported for Prism Element.
         required: true
         type: str
     nutanix_password:
         description:
             - The password to authenticate with the Nutanix Prism Element.
+            - Required as nutanix_api_key is not supported for Prism Element.
         required: true
         type: str
+    nutanix_api_key:
+        description:
+            - Not Supported as this module is for Prism Element.
+            - This field is only supported for Prism Central.
+        type: str
+        required: false
 extends_documentation_fragment:
     - nutanix.ncp.ntnx_credentials
     - nutanix.ncp.ntnx_info_v2
+    - nutanix.ncp.ntnx_logger
+    - nutanix.ncp.ntnx_proxy_v2
 author:
     - Abhinav Bansal (@abhinavbansal29)
     - George Ghawali (@george-ghawali)
@@ -122,6 +132,12 @@ changed:
     type: bool
     sample: true
 
+msg:
+    description: This indicates the message if any message occurred
+    returned: When there is an error
+    type: str
+    sample: "Api Exception raised while fetching restore points info"
+
 error:
     description: This field typically holds information about if the task have errors that occurred during the task execution
     returned: When an error occurs
@@ -133,9 +149,18 @@ failed:
     returned: always
     type: bool
     sample: false
+
+total_available_results:
+    description:
+        - The total number of available restore points in the PC.
+    type: int
+    returned: when all restore points are fetched
+    sample: 125
 """
 
 import warnings  # noqa: E402
+
+from ansible.module_utils.basic import env_fallback  # noqa: E402
 
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
 from ..module_utils.v4.base_info_module import BaseInfoModule  # noqa: E402
@@ -155,6 +180,15 @@ warnings.filterwarnings("ignore", message="Unverified HTTPS request is being mad
 
 def get_module_spec():
     module_args = dict(
+        nutanix_username=dict(
+            type="str", fallback=(env_fallback, ["NUTANIX_USERNAME"]), required=True
+        ),
+        nutanix_password=dict(
+            type="str",
+            no_log=True,
+            fallback=(env_fallback, ["NUTANIX_PASSWORD"]),
+            required=True,
+        ),
         restore_source_ext_id=dict(type="str", required=True),
         restorable_domain_manager_ext_id=dict(type="str", required=True),
         ext_id=dict(type="str"),
@@ -184,6 +218,9 @@ def get_restore_points(module, domain_manager_backups_api, result):
             exception=e,
             msg="Api Exception raised while fetching restore points info",
         )
+
+    total_available_results = resp.metadata.total_available_results
+    result["total_available_results"] = total_available_results
 
     resp = strip_internal_attributes(resp.to_dict()).get("data")
     if not resp:

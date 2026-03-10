@@ -91,6 +91,8 @@ options:
 extends_documentation_fragment:
       - nutanix.ncp.ntnx_credentials
       - nutanix.ncp.ntnx_operations_v2
+      - nutanix.ncp.ntnx_logger
+      - nutanix.ncp.ntnx_proxy_v2
 author:
  - Gevorg Khachatryan (@Gevorg-Khachatryan-97)
  - Alaa Bishtawi (@alaa-bish)
@@ -203,6 +205,12 @@ changed:
   type: bool
   sample: true
 
+msg:
+  description: This indicates the message if any message occurred
+  returned: When there is an error, module is idempotent or check mode (in delete operation)
+  type: str
+  sample: "Api Exception raised while creating service group"
+
 error:
   description: This field typically holds information about if the task have errors that occurred during the task execution
   returned: always
@@ -234,8 +242,8 @@ from copy import deepcopy  # noqa: E402
 
 from ansible.module_utils.basic import missing_required_lib  # noqa: E402
 
-from ..module_utils.base_module import BaseModule  # noqa: E402
 from ..module_utils.utils import remove_param_with_none_value  # noqa: E402
+from ..module_utils.v4.base_module_v4 import BaseModuleV4  # noqa: E402
 from ..module_utils.v4.constants import Tasks as TASK_CONSTANTS  # noqa: E402
 from ..module_utils.v4.flow.api_client import (  # noqa: E402
     get_etag,
@@ -336,7 +344,7 @@ def create_service_group(module, result):
     result["task_ext_id"] = task_ext_id
     result["response"] = strip_internal_attributes(resp.data.to_dict())
     if task_ext_id and module.params.get("wait"):
-        task_status = wait_for_completion(module, task_ext_id, True)
+        task_status = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(task_status.to_dict())
         ext_id = get_entity_ext_id_from_task(
             task_status, rel=TASK_CONSTANTS.RelEntityType.SERVICE_GROUP
@@ -397,7 +405,7 @@ def update_service_group(module, result):
     result["response"] = strip_internal_attributes(resp.data.to_dict())
 
     if task_ext_id and module.params.get("wait"):
-        wait_for_completion(module, task_ext_id, True)
+        wait_for_completion(module, task_ext_id)
         resp = get_service_group(module, service_groups, ext_id)
         result["ext_id"] = ext_id
         result["response"] = strip_internal_attributes(resp.to_dict())
@@ -409,6 +417,10 @@ def delete_service_group(module, result):
     service_groups = get_service_groups_api_instance(module)
     ext_id = module.params.get("ext_id")
     result["ext_id"] = ext_id
+
+    if module.check_mode:
+        result["msg"] = "Service group with ext_id:{0} will be deleted.".format(ext_id)
+        return
 
     current_spec = get_service_group(module, service_groups, ext_id)
 
@@ -434,14 +446,14 @@ def delete_service_group(module, result):
     result["response"] = strip_internal_attributes(resp.data.to_dict())
 
     if task_ext_id and module.params.get("wait"):
-        resp = wait_for_completion(module, task_ext_id, True)
+        resp = wait_for_completion(module, task_ext_id)
         result["response"] = strip_internal_attributes(resp.to_dict())
 
     result["changed"] = True
 
 
 def run_module():
-    module = BaseModule(
+    module = BaseModuleV4(
         argument_spec=get_module_spec(),
         supports_check_mode=True,
         required_if=[
